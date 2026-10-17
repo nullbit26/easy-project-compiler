@@ -59,7 +59,10 @@ npm run test:desktop    # проверка собранного: окно, да�
 2. поставить тег `v1.0.0` (тем же номером) и запушить его — GitHub Actions соберёт приложение и
    опубликует релиз сам;
 3. либо собрать локально и опубликовать вручную: `npm run build:desktop && npm run release`
-   (нужен авторизованный [GitHub CLI](https://cli.github.com/)).
+   (нужен токен с правом `contents: write` в `GITHUB_TOKEN`/`GH_TOKEN` или авторизованный
+   [GitHub CLI](https://cli.github.com/)). Публикатор сам проверяет опубликованное: если лента
+   `releases/latest/download/version.json` не отвечает тем, что собрано, он падает с адресом и кодом,
+   а не пишет «готово».
 
 ## Устройство
 
