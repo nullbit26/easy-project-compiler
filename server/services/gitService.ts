@@ -249,8 +249,17 @@ function locateRepo(root: string): RepoLocation | null {
   const topLevel = top.stdout.trim().replace(/[\r\n]+$/, '');
   if (!topLevel) return null;
 
-  const relative = toPosix(path.relative(topLevel, root));
-  return { top: topLevel, prefix: relative === '.' ? '' : relative };
+  // How far inside the repository the connected folder sits is Git's own answer, never a comparison
+  // of two strings. One folder can be named several ways — an 8.3 short name, a junction, a symlink,
+  // a path typed with a different case — and comparing the name the caller used with the name Git
+  // reports turns every change into "not mine": the folder then looks untouched while it is full of
+  // unsaved work, and the panel answers "everything is saved" for work it cannot see. Asked in the
+  // folder itself, Git answers with the prefix that actually applies to it ('', or 'src/app/').
+  const inside = runGit(['rev-parse', '--show-prefix'], root);
+  if (inside.code !== 0) return null;
+  const prefix = toPosix(inside.stdout.trim()).replace(/^\/+|\/+$/g, '');
+
+  return { top: topLevel, prefix };
 }
 
 function mapState(code: string): GitFileState {

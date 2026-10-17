@@ -53,12 +53,6 @@ jobs:
           npm run lint
           npm test
 
-      # Temporary: the tests pass on a developer's machine and fail here, and a runner's own log needs
-      # a token to read. Annotations do not, so the diagnosis is printed as one. Delete with the script.
-      - name: Diagnose Git on this runner
-        if: failure()
-        run: node tools/diag/git-diagnose.mjs
-
       - name: Build the portable app
         env:
           # Baked into the build: the folder the app asks for updates.

@@ -71,6 +71,25 @@ afterEach(() => {
   fs.rmSync(projectRoot, { recursive: true, force: true });
 });
 
+/**
+ * A directory that is another name for an existing one, or `false` when this machine will not make
+ * one. Windows needs no administrator rights for a junction; elsewhere a directory symlink is the
+ * closest thing, and a machine that refuses both is a machine this cannot be checked on.
+ */
+function linkDirectory(link: string, target: string): boolean {
+  try {
+    if (fs.existsSync(link)) fs.rmSync(link, { recursive: true, force: true });
+    if (process.platform === 'win32') {
+      const created = spawnSync('cmd', ['/c', 'mklink', '/J', link, target], { encoding: 'utf8', windowsHide: true });
+      return created.status === 0 && fs.existsSync(link);
+    }
+    fs.symlinkSync(target, link, 'dir');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The branch the folder is on, which works even before the repository has its first commit. */
 function readBranchName(): string {
   return git(['symbolic-ref', '--short', 'HEAD']).stdout.trim();
@@ -358,6 +377,36 @@ describe.skipIf(!gitAvailable())('Git in the connected folder', { timeout: GIT_T
       expect(err.code).toBe('unknown_branch');
     }
   }, 20_000);
+
+  it('9. reports the changes of a folder reached by another name for it', () => {
+    // One folder has more than one name: Windows gives it an 8.3 short name, a junction or a symlink
+    // points at it, a path can be typed with a different case. Git answers with the name it resolved,
+    // so the folder's changes have to be reported under the name the user connected — comparing the
+    // two names instead makes a folder full of unsaved work read as "everything is already saved".
+    write('app/a.txt', 'one\n');
+    git(['add', '-A']);
+    git(['commit', '-q', '-m', 'first']);
+    write('app/a.txt', 'one\ntwo\n');
+
+    const whole = path.join(sandbox, 'linked-project');
+    if (!linkDirectory(whole, projectRoot)) return;
+
+    const status = getGitStatus(whole);
+    expect(status.isRepo).toBe(true);
+    expect(status.clean).toBe(false);
+    expect(status.files.map((file) => file.path)).toEqual(['app/a.txt']);
+
+    // A folder *inside* the repository, reached by a link of its own, is described relative to that
+    // folder: its screen knows no other name for its own files.
+    const inner = path.join(sandbox, 'linked-app');
+    if (!linkDirectory(inner, path.join(projectRoot, 'app'))) return;
+
+    expect(getGitStatus(inner).files.map((file) => file.path)).toEqual(['a.txt']);
+
+    const commit = commitGitChanges(inner, { files: ['a.txt'], message: 'Обновить a.txt' });
+    expect(commit.committed).toEqual(['a.txt']);
+    expect(commit.hash).toMatch(/^[0-9a-f]{7,}$/i);
+  });
 
   it('8g. will not start a branch in the middle of a merge', () => {
     write('a.txt', 'one\n');
