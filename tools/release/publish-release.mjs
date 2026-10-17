@@ -29,6 +29,16 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
 const EXE_NAME = 'Easy Project Compiler.exe';
+/**
+ * The name the release actually keeps.
+ *
+ * A release asset does not keep the spaces in the name it is uploaded with — GitHub stores
+ * `Easy Project Compiler.exe` as `Easy.Project.Compiler.exe` — so a manifest naming the spaced file
+ * points at a URL that answers 404. The name is chosen with dots rather than letting the host decide,
+ * because the manifest and the asset must agree by construction, not by a guess about the host. The
+ * app still calls the file it downloads whatever its own `EXE_NAME` says: the swap looks for that.
+ */
+const ASSET_NAME = 'Easy.Project.Compiler.exe';
 const folderName = 'Приложение-для-тестеров';
 
 function desktopDir() {
@@ -65,7 +75,7 @@ fs.mkdirSync(publishDir, { recursive: true });
 
 const manifest = {
   version,
-  file: EXE_NAME,
+  file: ASSET_NAME,
   sha256,
   ...(notes ? { notes } : {})
 };
@@ -74,7 +84,7 @@ fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
 /* A copy with the stable name the manifest promises: the release asset and the file the updater
    downloads must be the same name, or the swap looks for a file that was never written. */
-const stagedExe = path.join(publishDir, EXE_NAME);
+const stagedExe = path.join(publishDir, ASSET_NAME);
 fs.copyFileSync(exePath, stagedExe);
 
 const megabytes = (fs.statSync(stagedExe).size / 1024 / 1024).toFixed(1);

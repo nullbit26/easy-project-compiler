@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  alternateAssetUrl,
   fileNameOf,
   isNewerVersion,
   normalizeVersion,
@@ -88,6 +89,17 @@ describe('2. the manifest', () => {
     expect(resolveAssetUrl('https://example.com/download', 'https://cdn.example.com/x.exe')).toBe(
       'https://cdn.example.com/x.exe'
     );
+  });
+
+  it('2e. knows the name a release host keeps, for the releases published before the publisher did', () => {
+    // GitHub stores `Easy Project Compiler.exe` as `Easy.Project.Compiler.exe`; a manifest written
+    // before this was known names the spaced file and its URL answers 404.
+    expect(alternateAssetUrl('https://example.com/download', 'Easy Project Compiler.exe')).toBe(
+      'https://example.com/download/Easy.Project.Compiler.exe'
+    );
+    // Nothing to rewrite: a name without spaces, or an address that names its own host.
+    expect(alternateAssetUrl('https://example.com/download', 'Build.exe')).toBeNull();
+    expect(alternateAssetUrl('https://example.com/download', 'https://cdn.example.com/x y.exe')).toBeNull();
   });
 
   it('2d. never turns a name from the network into a path', () => {
@@ -182,6 +194,39 @@ describe('3. the updater', () => {
     expect(state.error).toMatch(/SHA-256/);
     expect(fs.existsSync(path.join(dir, 'update', EXE_NAME))).toBe(false);
     expect(stagedUpdateVersion(path.join(dir, 'update'))).toBeNull();
+  });
+
+  it('3f. finds the file when the release stored it under the name without spaces', async () => {
+    // The first release went out with the spaced name in its manifest and the dotted one on the
+    // host, so the download URL answered 404. A build already in someone's hands cannot be fixed by
+    // today's publisher, so a 404 is followed by one more ask under the stored name.
+    const manifest = { version: '1.1.0', file: EXE_NAME, sha256: sha(build) };
+    const calls: string[] = [];
+    const impl = (async (url: string) => {
+      calls.push(decodeURIComponent(String(url)));
+      if (String(url).includes('version.json')) {
+        return new Response(JSON.stringify(manifest), { status: 200 });
+      }
+      const name = decodeURIComponent(String(url).split('/').pop() || '');
+      if (name.includes(' ')) return new Response('not found', { status: 404 });
+      return new Response(build, { status: 200, headers: { 'content-length': String(build.length) } });
+    }) as unknown as typeof fetch;
+
+    const updater = createUpdater({
+      enabled: true,
+      feed: 'https://example.com/download',
+      version: '1.0.0',
+      updateDir: path.join(dir, 'update'),
+      onState: () => {},
+      log: () => {},
+      fetchImpl: impl
+    });
+
+    const state = await updater.download();
+    expect(state.status).toBe('ready');
+    expect(calls.some((url) => url.includes('Easy.Project.Compiler.exe'))).toBe(true);
+    // It is still stored under the app's own name: the swap looks for exactly that.
+    expect(fs.readFileSync(path.join(dir, 'update', EXE_NAME), 'utf8')).toBe('new build bytes');
   });
 
   it('3c. the offered build can be downloaded by a press, and only once', async () => {

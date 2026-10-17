@@ -90,6 +90,24 @@ export function resolveAssetUrl(feed: string, file: string): string {
   return `${base}${encodeURIComponent(file).replace(/%2F/g, '/')}`;
 }
 
+/**
+ * The same file, under the name a release host may actually have stored it as.
+ *
+ * A release asset does not keep the spaces in the name it was uploaded with: GitHub stores
+ * `Easy Project Compiler.exe` as `Easy.Project.Compiler.exe`, and the URL the manifest names answers
+ * 404. This project's own publisher now records the stored form, so this is for the releases
+ * published before it did — a build already in someone's hands cannot be fixed by today's publisher,
+ * and an update that 404s is an update that never arrives.
+ *
+ * Null when the name has no spaces to change, which is also the answer for an absolute URL: that one
+ * names its own host and is not ours to rewrite.
+ */
+export function alternateAssetUrl(feed: string, file: string): string | null {
+  if (/^https?:\/\//i.test(file)) return null;
+  const stored = file.replace(/\s+/g, '.');
+  return stored === file ? null : resolveAssetUrl(feed, stored);
+}
+
 /** The file name inside a download URL, for storing it next to the app without asking the server. */
 export function fileNameOf(url: string, fallback = 'update.exe'): string {
   try {

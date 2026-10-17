@@ -445,7 +445,7 @@ The user's own Git, driven from the app — locally, and only on the files the u
 ### 4.17 Updating the Desktop Build (`electron/updates.ts`, `updateRules.ts`, `UpdateNotice.tsx`)
 - The app updates itself without an installer: it asks `<feed>/version.json` (GitHub `releases/latest/download`), compares the version, offers a «Скачать» button, and — if the offer is ignored — downloads the new `.exe` in the background (up to 20 s later) with `updateRules.ts`'s arithmetic and a SHA-256 check of the result.
 - The downloaded build is put in place **after the app closes**: Windows refuses to rename the running portable `.exe` (`EBUSY`, measured), so `scheduleUpdateInstall` writes a small `.cmd` next to the download and starts it detached; the script waits for the file to be free, moves the new build over the old one, removes itself and the manifest, and restarts the app only when «Перезапустить и обновить» asked for it.
-- `data` is never touched by an update: projects, keys and backups stay where they were.
+- The manifest names the file the release *actually keeps*: a release host does not preserve spaces in an asset name (GitHub stores `Easy Project Compiler.exe` as `Easy.Project.Compiler.exe`), so the publisher uploads and records the dotted name. The updater still stores the download under its own `EXE_NAME`, because the swap looks for that; and a 404 is followed by one more ask under the stored name, so a release published before this rule still updates (found by checking the published feed: the manifest named a URL that answered 404).
 - The updater is inert in a browser build, in `npm run dev`, and in a checkout with no release configured; the sidebar then shows nothing about updates.
 
 ---

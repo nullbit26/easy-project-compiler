@@ -27,6 +27,7 @@ import {
   fileNameOf,
   isNewerVersion,
   readManifest,
+  alternateAssetUrl,
   resolveAssetUrl,
   UpdateManifest,
   UpdateState
@@ -171,7 +172,20 @@ export function createUpdater(options: UpdaterOptions): Updater {
     log(`update: downloading ${url}`);
     emit({ status: 'downloading', version: manifest.version, percent: 0, notes: manifest.notes });
 
-    const response = await fetchImpl(url);
+    let response = await fetchImpl(url);
+    /*
+     * A name with spaces is not a name a release host keeps, and the first release was published
+     * with one in its manifest: the asset went up as `Easy.Project.Compiler.exe` and the URL the
+     * manifest named answered 404. The publisher records the stored name now; this is so a build
+     * that is already in someone's hands still finds its update.
+     */
+    if (response.status === 404) {
+      const alternate = alternateAssetUrl(feed, manifest.file);
+      if (alternate) {
+        log(`update: ${manifest.file} answered 404 — asking for ${alternate}`);
+        response = await fetchImpl(alternate);
+      }
+    }
     if (!response.ok || !response.body) throw new Error(`HTTP ${response.status} for ${manifest.file}`);
     const total = Number(response.headers.get('content-length') || 0);
     const hash = crypto.createHash('sha256');
