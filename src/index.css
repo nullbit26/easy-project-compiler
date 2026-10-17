@@ -1,0 +1,318 @@
+@import "tailwindcss";
+
+/*
+  The window is not always tall. Docked beside an editor, or in a short window, the app gets
+  400-700 px of height while the layout is built for a full screen — the first screen then pushes
+  its own button below the edge and the user has to scroll to reach what the screen is about.
+  `short:` is the height counterpart of the width breakpoints: below 700 px it trims the vertical
+  air (screen padding, card padding, empty-state margins) and on a normal window it does nothing.
+*/
+@custom-variant short (@media (max-height: 700px));
+
+/*
+  The strip along the right edge belongs to the app, not to Windows.
+
+  Left to itself the window draws the system scrollbar: a light grey band on a desktop set to the
+  light theme, a band that follows the OS theme rather than the app, and about 16 px of the
+  window's width. The app is dark everywhere else, so its own strip is drawn instead — 12 px, the
+  window's own near-black behind it and a slate thumb that appears whole or not at all (the three
+  transparent pixels of border keep the thumb a slim pill instead of a 12 px slab).
+
+  Two things this costs: an element that authors `scrollbar-width` (Tailwind's `scrollbar-thin`,
+  say) hands itself back to the OS strip and cancels everything below, which is why no panel uses
+  that utility any more; and the width is fixed here, so the desktop check that measures it asks
+  for 8-14 px — the same number in every panel, on a light desktop as well as a dark one.
+*/
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/*
+  Where the keyboard is, drawn.
+
+  The app had no focus style of its own and 40-odd `focus:outline-none` utilities on top of that, so
+  a keyboard user could not see where the tab key had landed anywhere in the app — the audit that
+  measured it found the same answer on every screen: 218 focusable elements, none showing a ring.
+
+  One rule draws it for everything instead of a ring per component: `:focus-visible` fires for the
+  keyboard and stays quiet for a mouse click, and the offset keeps the ring off the element's own
+  edge so it reads on both a filled button and a bare text link. The colour is the app's accent;
+  the `outline-none` utilities were removed where they used to hide this.
+*/
+:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 2px;
+}
+
+/* Inputs say "you are here" with their own border as well; the ring sits a little further out so the
+   two do not fight over the same pixel. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 1px;
+}
+
+/*
+  A control that cannot be pressed does not pretend otherwise.
+
+  A disabled button used to light up under the pointer and turn the arrow into a hand — the same
+  change a working button makes, and a colour change is the one signal this app has for "this is the
+  button to press". The hover dressing on those buttons is written as `enabled:hover:…` where it lives
+  (see the note in src/tests/disabledControls.test.ts); this rule is the other half, and it holds for
+  anything that is switched off by an attribute rather than by a class.
+
+  An unlayered rule, deliberately: Tailwind's utilities sit in a layer, and this has to outrank the
+  `cursor-pointer` a component may still carry.
+*/
+:disabled,
+[aria-disabled='true'] {
+  cursor: default;
+}
+
+/*
+  The launch animation: the mark, the name, and the line that says the app is coming up.
+
+  It is written as CSS keyframes rather than as a JavaScript animation because the whole point of a
+  splash is that it starts *before* anything else is ready — the first frame is painted while React
+  is still working out what the app is going to show. The pieces only fade, drift and scale: no
+  layout moves while it plays, so the window never flickers between two arrangements.
+
+  Every delay here is also a number in LaunchSplash.tsx, which is what takes the overlay down and
+  lets the app be used. They are deliberately not shared: the animation must run on its own even if
+  a frame is dropped, and the timings are short enough that a reader can hold both in their head.
+  120ms the mark, 520ms the name, 980ms the rule, 1150ms the line under it, 1250ms the progress bar,
+  and the overlay leaves at 2300ms.
+*/
+@keyframes launch-mark-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+    filter: blur(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes launch-glow-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+}
+
+@keyframes launch-name-in {
+  from {
+    opacity: 0;
+    letter-spacing: 0.34em;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    letter-spacing: 0.1em;
+    transform: translateY(0);
+  }
+}
+
+@keyframes launch-rule-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes launch-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes launch-bar-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes launch-leave {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+
+.launch-mark {
+  animation: launch-mark-in 900ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+}
+
+.launch-glow {
+  animation: launch-glow-in 1100ms ease-out 60ms both;
+}
+
+.launch-name {
+  animation: launch-name-in 950ms cubic-bezier(0.16, 1, 0.3, 1) 520ms both;
+}
+
+.launch-rule {
+  animation: launch-rule-in 700ms cubic-bezier(0.22, 1, 0.36, 1) 980ms both;
+}
+
+.launch-line {
+  animation: launch-line-in 700ms ease-out 1150ms both;
+}
+
+.launch-bar {
+  animation: launch-bar-fill 950ms cubic-bezier(0.35, 0.85, 0.25, 1) 1250ms both;
+  transform-origin: left;
+}
+
+.launch-leaving {
+  animation: launch-leave 450ms ease-in forwards;
+}
+
+/*
+  The app's mark, in the corner of the title bar.
+
+  It is the launch screen's own file, so it needs no plate behind it: the picture is already cut out
+  (its own alpha is the only backing), and at this size a background would turn a mark into a badge.
+  What makes it read as lit rather than as a small picture glued to a dark bar is done with the
+  mark's own colours — an indigo-to-cyan halo that breathes around it, and a thin band of light that
+  crosses it as if the surface were glass.
+
+  The glint is masked by the logo itself, which is the whole trick: the sweeping gradient is only
+  ever visible where the mark is opaque, so the light travels across the drawing instead of across
+  the rectangle around it. It is a background position and an opacity, so nothing about the layout
+  moves; and the first pass is timed to arrive a moment after the launch screen has gone, which
+  reads as the window waking up rather than as an idle loop nobody saw.
+*/
+.title-mark {
+  position: relative;
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+}
+
+.title-mark-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  animation: title-mark-halo 4.6s ease-in-out 0.4s infinite both;
+}
+
+.title-mark-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  mix-blend-mode: screen;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  background-image: linear-gradient(
+    102deg,
+    rgba(255, 255, 255, 0) 34%,
+    rgba(226, 232, 240, 0.95) 50%,
+    rgba(255, 255, 255, 0) 66%
+  );
+  background-size: 260% 100%;
+  background-position: 165% 0;
+  animation: title-mark-sheen 7s ease-in-out 3.1s infinite;
+}
+
+/* The halo is the mark's own colours, lit: indigo resting, cyan at the top of the breath. */
+@keyframes title-mark-halo {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(99, 102, 241, 0.45));
+  }
+  50% {
+    filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.55)) drop-shadow(0 0 11px rgba(99, 102, 241, 0.4));
+  }
+}
+
+@keyframes title-mark-sheen {
+  0% {
+    background-position: 165% 0;
+    opacity: 0;
+  }
+  5% {
+    opacity: 0.85;
+  }
+  24% {
+    background-position: -65% 0;
+    opacity: 0;
+  }
+  100% {
+    background-position: -65% 0;
+    opacity: 0;
+  }
+}
+
+/*
+  A preference for less movement is a request, not a preference to be admired: the pieces appear in
+  place, without the drift and the blur, and the overlay goes away sooner (that part is in the
+  component, which reads the same media query). The mark in the title bar keeps its picture and
+  loses both the breathing and the glint.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .launch-mark,
+  .launch-glow,
+  .launch-name,
+  .launch-rule,
+  .launch-line,
+  .launch-bar {
+    animation-duration: 1ms;
+    animation-delay: 0ms;
+  }
+
+  .title-mark-img,
+  .title-mark-sheen {
+    animation: none;
+  }
+}

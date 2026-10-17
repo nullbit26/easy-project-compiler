@@ -1,0 +1,62 @@
+{
+  "name": "react-example",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:exe": "node tools/exe/build-sea.mjs",
+    "icons": "node tools/assets/make-icons.mjs",
+    "desktop": "node tools/desktop/run-desktop.mjs",
+    "build:desktop": "node tools/desktop/build-desktop.mjs",
+    "release": "node tools/release/publish-release.mjs",
+    "test:desktop": "node tools/desktop/verify-desktop.mjs",
+    "shots": "node tools/screens/capture-screens.mjs",
+    "start": "node dist/server.cjs",
+    "preview": "node dist/server.cjs",
+    "clean": "rm -rf dist server.js",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "node tools/exe/e2e-verify.mjs"
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "dotenv": "^17.2.3",
+    "esbuild": "^0.25.0",
+    "express": "^4.21.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "react-router-dom": "^7.18.2",
+    "vite": "^6.2.3"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "autoprefixer": "^10.4.21",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
+    "jsdom": "^30.0.1",
+    "resedit": "^1.7.2",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3",
+    "vitest": "^4.1.10"
+  },
+  "allowScripts": {
+    "electron@44.7.2": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nullbit26/jobspider.ai.git"
+  }
+}

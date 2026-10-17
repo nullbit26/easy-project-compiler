@@ -1,0 +1,65 @@
+name: Release
+
+# A release is a tag: `git tag v1.1.0 && git push --tags`.
+#
+# The build has to happen on Windows — the app is a portable .exe with a Windows icon and a Windows
+# version resource — and the release has to be created by a token, which is why this runs here and
+# not on the machine the app is developed on. The tag's version is what the app compares with the
+# one it carries, so the number in package.json and the tag must agree; the workflow checks that
+# instead of hoping.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the tag and package.json agree
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "Тег $GITHUB_REF_NAME, а в package.json $pkg — обновление не сработает, номера должны совпадать." >&2
+            exit 1
+          fi
+
+      - name: Typecheck and unit tests
+        run: |
+          npm run lint
+          npm test
+
+      - name: Build the portable app
+        env:
+          # Baked into the build: the folder the app asks for updates.
+          EPC_GITHUB_REPO: ${{ github.repository }}
+          EPC_EXE_DIR: ${{ github.workspace }}/release
+        run: npm run build:desktop
+
+      - name: Check the packaged app
+        env:
+          EPC_EXE_DIR: ${{ github.workspace }}/release
+        run: npm run test:desktop
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EPC_EXE_DIR: ${{ github.workspace }}/release
+        run: npm run release -- --notes "Сборка ${{ github.ref_name }}"

@@ -1,0 +1,14 @@
+# The workspace's own id, written by the editor this project was built in
+.freebuff/
+
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Local, never-committed store for API keys saved from the in-app settings panel
+data/

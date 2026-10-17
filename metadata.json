@@ -1,0 +1,6 @@
+{
+  "name": "Easy Project Compiler",
+  "description": "An AI project coach for beginners and vibe-coders to create, understand, debug, and finish software projects with AI coding agents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
