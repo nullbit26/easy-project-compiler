@@ -377,7 +377,17 @@ try {
 }
 
 for (const result of results) {
-  console.log(`${result.ok ? 'PASS' : 'FAIL'}  ${result.name}${result.ok || !result.detail ? '' : `  →  ${result.detail}`}`);
+  const line = `${result.ok ? 'PASS' : 'FAIL'}  ${result.name}${result.ok || !result.detail ? '' : `  →  ${result.detail}`}`;
+  console.log(line);
+  /*
+   * A failing check is also said as an annotation.
+   *
+   * The report above is the whole story for whoever watches the run, but a run on a machine nobody
+   * is looking at — a build server, whose log needs a token to read — carries back only the lines it
+   * recognises as errors. Without this, "the packaged app failed" is all that arrives, and the check
+   * that failed has to be guessed.
+   */
+  if (!result.ok) console.log(`::error::${line}`);
 }
 console.log(`\n${results.length - failures}/${results.length} checks passed`);
 process.exit(failures > 0 ? 1 : 0);
