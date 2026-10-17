@@ -10,5 +10,7 @@ coverage/
 .env*
 !.env.example
 
-# Local, never-committed store for API keys saved from the in-app settings panel
-data/
+# Local, never-committed store for API keys saved from the in-app settings panel.
+# The leading slash is deliberate: without it this rule also swallowed src/data/ — the seed projects
+# the app is built from — and a fresh clone could not even build.
+/data/

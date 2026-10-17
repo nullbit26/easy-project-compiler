@@ -523,11 +523,22 @@ async function loadEsbuild(): Promise<any> {
  * One esbuild message, as the screen wants it: a file, a position and a sentence — never the
  * multi-error dump esbuild prints for a console.
  */
-/** A path esbuild handed back, made relative to the folder — or rejected when it is outside it. */
+/**
+ * A path esbuild handed back, made relative to the folder — or rejected when it is outside it.
+ *
+ * Two ways a path is outside: it walks up (`..`) or it cannot be expressed as a relative path at
+ * all, which is what Windows answers when the two paths are on different drives. The second case
+ * has to be rejected explicitly — `path.relative` then returns the absolute path, and a check for
+ * a leading `..` would let it through as if it were the folder's own file. It is not a rare case:
+ * it happens on a build machine whose checkout and temporary folder sit on different disks, which
+ * is exactly how the release pipeline ran into it.
+ */
 function toWorkspaceRelative(root: string, candidate: string): string | null {
   const absolute = path.isAbsolute(candidate) ? candidate : path.resolve(root, candidate);
   const relative = toPosix(path.relative(root, absolute));
-  if (!relative || relative.startsWith('..')) return null;
+  if (!relative || relative.startsWith('..') || /^[A-Za-z]:/.test(relative) || relative.startsWith('/')) {
+    return null;
+  }
   return relative;
 }
 
@@ -541,11 +552,15 @@ function diagnosticFrom(
   // esbuild often puts the position in the text while leaving `location` empty.
   const parsed = raw.match(/^(.+?):(\d+):(\d+):\s*(?:ERROR|WARNING)?:?\s*([\s\S]*)$/);
 
-  // The path in the text is relative to the build's working directory; the one in `location` is
-  // relative to the process, so each is resolved against the place it actually came from.
+  /*
+    Every path esbuild reports — in the text and in `location` alike — is relative to the working
+    directory the build was started in, which is the folder itself (`absWorkingDir: root` above).
+    Resolving them against the process's own directory instead used to look right only because a
+    developer's checkout and the temporary folder usually sit on the same disk.
+  */
   const fileFromText = parsed ? toWorkspaceRelative(root, parsed[1]) : null;
   const fileFromLocation = location?.file
-    ? toWorkspaceRelative(root, path.isAbsolute(location.file) ? location.file : path.resolve(process.cwd(), location.file))
+    ? toWorkspaceRelative(root, path.isAbsolute(location.file) ? location.file : path.resolve(root, location.file))
     : null;
 
   return {

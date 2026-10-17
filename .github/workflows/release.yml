@@ -30,6 +30,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The Git tests commit into temporary repositories, and a fresh runner has no identity at all —
+      # a developer's machine always has one, which is why the suite is green there and red here.
+      - name: Give Git an identity the way a developer's machine has one
+        run: |
+          git config --global user.name "Release Check"
+          git config --global user.email "release-check@users.noreply.github.com"
+
       - name: Check the tag and package.json agree
         shell: bash
         run: |
