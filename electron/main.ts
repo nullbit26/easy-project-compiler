@@ -1649,6 +1649,7 @@ function startUpdater(): void {
     feed: UPDATE_FEED,
     version: APP_VERSION,
     updateDir: updateDir(),
+    exeName: runningExeName(),
     onState: publishUpdateState,
     log: (line) => journal(line)
   });
@@ -1659,9 +1660,11 @@ function startUpdater(): void {
   }
 
   /* A build downloaded during a previous run but not yet put in place (another copy was starting,
-     or the app was closed before the swap) still deserves the line in the sidebar. */
-  const staged = stagedUpdateVersion(updateDir());
-  if (staged) lastUpdateState = { status: 'ready', version: staged, percent: 100 };
+     or the app was closed before the swap) still deserves the line in the sidebar — and only the same
+     question the swap asks may answer it: a manifest naming a build the app has already outgrown, or
+     naming a file that is no longer there, would promise an update that will never happen. */
+  const staged = readStagedUpdate(updateDir(), APP_VERSION, runningExeName());
+  if (staged) lastUpdateState = { status: 'ready', version: staged.manifest.version, percent: 100 };
 
   updater.start();
 }
@@ -1703,7 +1706,7 @@ async function main(): Promise<void> {
     new version's own start. The manifest is consumed by the swap, so this happens exactly once —
     a failed or repeated swap cannot trap the app in a restart loop.
   */
-  if (!SELF_TEST_FILE && readStagedUpdate(updateDir(), APP_VERSION)) {
+  if (!SELF_TEST_FILE && readStagedUpdate(updateDir(), APP_VERSION, runningExeName())) {
     journal('update: a downloaded build is waiting and will be installed when this one closes');
   }
 
@@ -1745,7 +1748,7 @@ app.on('second-instance', () => focusWindow());
 */
 app.on('will-quit', () => {
   if (SELF_TEST_FILE || updateInstallScheduled) return;
-  if (!readStagedUpdate(updateDir(), APP_VERSION)) return;
+  if (!readStagedUpdate(updateDir(), APP_VERSION, runningExeName())) return;
   scheduleUpdateNow(false);
 });
 

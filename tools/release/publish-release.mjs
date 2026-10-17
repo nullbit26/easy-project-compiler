@@ -36,15 +36,25 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
 const EXE_NAME = 'Easy Project Compiler.exe';
 /**
- * The name the release actually keeps.
+ * The name the release asset is stored under: the app's own name with the spaces turned into dots.
  *
- * A release asset does not keep the spaces in the name it is uploaded with — GitHub stores
- * `Easy Project Compiler.exe` as `Easy.Project.Compiler.exe` — so a manifest naming the spaced file
- * points at a URL that answers 404. The name is chosen with dots rather than letting the host decide,
- * because the manifest and the asset must agree by construction, not by a guess about the host. The
- * app still calls the file it downloads whatever its own `EXE_NAME` says: the swap looks for that.
+ * A release host does not keep the spaces in a name it is uploaded with — GitHub stores
+ * `Easy Project Compiler.exe` as `Easy.Project.Compiler.exe` — so this is the name whose URL answers
+ * with the bytes, and the name every check below is made against.
  */
 const ASSET_NAME = 'Easy.Project.Compiler.exe';
+/**
+ * The name the manifest carries: the file name the app calls itself, spaces and all.
+ *
+ * The manifest is read by builds that are already out there, and those builds look for the staged
+ * download under the name they are running as (`Easy Project Compiler.exe`) — downloading is only
+ * half of an update, and a manifest naming `Easy.Project.Compiler.exe` leaves the downloaded build
+ * sitting in the update folder forever. What saves that name is the app's own second question: a
+ * manifest URL that 404s is asked again with the spaces as dots (see `alternateAssetUrl` in
+ * src/utils/updateRules.ts), which is the URL checked below. A manifest published before this was
+ * understood carries the dotted name; that is why the app asks for both.
+ */
+const MANIFEST_FILE_NAME = EXE_NAME;
 const MANIFEST_NAME = 'version.json';
 const folderName = 'Приложение-для-тестеров';
 const API = 'https://api.github.com';
@@ -84,7 +94,7 @@ fs.mkdirSync(publishDir, { recursive: true });
 
 const manifest = {
   version,
-  file: ASSET_NAME,
+  file: MANIFEST_FILE_NAME,
   sha256,
   ...(notes ? { notes } : {})
 };
@@ -334,6 +344,9 @@ async function verify(repo, tag, attempts = 12, delay = 5000) {
       }
     }
 
+    /* The URL the download really comes from: the manifest's own name answers 404, and the app asks
+       again with the spaces as dots. A release is only done when that second URL answers with the
+       file that was uploaded. */
     const fileAnswer = await fetch(`${feed}/${encodeURIComponent(ASSET_NAME)}`, { method: 'HEAD', redirect: 'follow' }).catch((error) => ({ ok: false, status: 0, headers: new Headers(), error }));
     if (!fileAnswer.ok) {
       problems.push(`${feed}/${encodeURIComponent(ASSET_NAME)} отвечает HTTP ${fileAnswer.status}`);

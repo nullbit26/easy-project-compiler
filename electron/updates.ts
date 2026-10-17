@@ -48,6 +48,14 @@ export interface UpdaterOptions {
   version: string;
   /** Where the downloaded build is kept until the next start: `<data>/update`. */
   updateDir: string;
+  /**
+   * The file name of the build that is running.
+   *
+   * The download is staged under exactly this name, because the swap looks for exactly this name
+   * beside the app: a build the tester renamed must still be able to replace itself. Defaults to the
+   * name it is published under.
+   */
+  exeName?: string;
   onState: (state: UpdateState) => void;
   log: (line: string) => void;
   /** Only for tests: replace the network. */
@@ -96,6 +104,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
     feed,
     version,
     updateDir,
+    exeName = EXE_NAME,
     onState,
     log,
     fetchImpl = fetch,
@@ -164,9 +173,9 @@ export function createUpdater(options: UpdaterOptions): Updater {
 
   async function download(manifest: UpdateManifest): Promise<UpdateState> {
     const url = resolveAssetUrl(feed, manifest.file);
-    /* The name the app is published under: the swap looks for exactly this, so it is the one that
+    /* The name of the file that is running: the swap looks for exactly this, so it is the one that
        is downloaded even when the release names the asset differently. */
-    const paths = stagedPaths(EXE_NAME);
+    const paths = stagedPaths(exeName);
     fs.mkdirSync(updateDir, { recursive: true });
     if (fs.existsSync(paths.part)) fs.rmSync(paths.part, { force: true });
     log(`update: downloading ${url}`);
@@ -333,7 +342,7 @@ export interface StagedUpdate {
  * when the staged build is not newer than the one running — the last one matters most: a file left
  * over from a released version that has since been rolled back must never be installed.
  */
-export function readStagedUpdate(updateDir: string, version: string): StagedUpdate | null {
+export function readStagedUpdate(updateDir: string, version: string, exeName = EXE_NAME): StagedUpdate | null {
   const manifestPath = path.join(updateDir, 'version.json');
   if (!fs.existsSync(manifestPath)) return null;
   let manifest: UpdateManifest | null = null;
@@ -344,9 +353,21 @@ export function readStagedUpdate(updateDir: string, version: string): StagedUpda
   }
   if (!manifest) return null;
   if (!isNewerVersion(manifest.version, version)) return null;
-  const name = /^https?:\/\//i.test(manifest.file) ? fileNameOf(manifest.file, EXE_NAME) : path.basename(manifest.file);
-  const file = path.join(updateDir, name);
-  if (!fs.existsSync(file)) return null;
+  /*
+    The file is looked for under the name the app itself is running as — that is the name the
+    download stages it under (see `download`), while the manifest names the asset the way the
+    release host stores it (`Easy.Project.Compiler.exe` beside a running `Easy Project Compiler.exe`).
+    Reading only the manifest's name found nothing beside a staged download, so a build that had
+    reported «готово» for a whole release was never installed on anybody's machine. The manifest's
+    own name is still accepted, so a stage written by an older build is not abandoned.
+  */
+  const fromManifest = /^https?:\/\//i.test(manifest.file)
+    ? fileNameOf(manifest.file, exeName)
+    : path.basename(manifest.file);
+  const file = [exeName, fromManifest]
+    .map((name) => path.join(updateDir, name))
+    .find((candidate) => fs.existsSync(candidate));
+  if (!file) return null;
   return { manifest, file };
 }
 
@@ -434,7 +455,7 @@ export function scheduleUpdateInstall(options: {
   /** Only for tests. */
   spawnImpl?: (command: string, args: string[], options: Record<string, unknown>) => { unref: () => void };
 }): InstallSchedule {
-  const staged = readStagedUpdate(options.updateDir, options.version);
+  const staged = readStagedUpdate(options.updateDir, options.version, options.exeName);
   if (!staged) return { scheduled: false, reason: 'nothing newer is staged' };
 
   const scriptPath = path.join(options.updateDir, 'apply-update.cmd');

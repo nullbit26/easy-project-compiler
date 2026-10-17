@@ -128,12 +128,12 @@ describe('3. the updater', () => {
   const build = Buffer.from('new build bytes');
 
   /** A network that answers version.json and the file, counting the calls it saw. */
-  function fakeNetwork(options: { version?: string; bytes?: Buffer; hash?: string; status?: number } = {}) {
+  function fakeNetwork(options: { version?: string; bytes?: Buffer; hash?: string; status?: number; file?: string } = {}) {
     const version = options.version ?? '1.1.0';
     const bytes = options.bytes ?? build;
     const manifest = {
       version,
-      file: EXE_NAME,
+      file: options.file ?? EXE_NAME,
       sha256: options.hash ?? sha(bytes)
     };
     const calls: string[] = [];
@@ -321,6 +321,34 @@ describe('3. the updater', () => {
     expect(state.status).toBe('unconfigured');
     expect(network.calls).toHaveLength(0);
   });
+
+  it('3h. the download is staged under the name the app is running as', async () => {
+    /*
+     * The release names its asset `Easy.Project.Compiler.exe`; the swap looks for the file beside the
+     * app, whose name is whatever the person running it kept. Staging under the published name instead
+     * left the swap hunting for a file that was never written — the downloaded build was reported ready
+     * and then never installed.
+     */
+    const network = fakeNetwork({ file: 'Easy.Project.Compiler.exe' });
+    const updateDir = path.join(dir, 'update');
+    const updater = createUpdater({
+      enabled: true,
+      feed: 'https://example.com/download',
+      version: '1.0.0',
+      updateDir,
+      exeName: 'EPC 1.0.exe',
+      onState: () => {},
+      log: () => {},
+      fetchImpl: network.impl
+    });
+
+    await updater.check(true);
+    const state = await updater.download();
+    expect(state.status).toBe('ready');
+    expect(fs.readFileSync(path.join(updateDir, 'EPC 1.0.exe'), 'utf8')).toBe('new build bytes');
+    expect(fs.existsSync(path.join(updateDir, EXE_NAME))).toBe(false);
+    expect(readStagedUpdate(updateDir, '1.0.0', 'EPC 1.0.exe')?.manifest.version).toBe('1.1.0');
+  });
 });
 
 describe('4. putting the downloaded build in place', () => {
@@ -419,5 +447,75 @@ describe('4. putting the downloaded build in place', () => {
 
   it('4e. a build that never reached the update folder is not advertised', () => {
     expect(stagedUpdateVersion(path.join(dir, 'nope'))).toBeNull();
+  });
+
+  /** A folder with a staged download whose manifest names the file the way a release does. */
+  function stageUnder(options: { name: string; manifestFile: string; version?: string }) {
+    const updateDir = path.join(dir, 'data', 'update');
+    fs.mkdirSync(updateDir, { recursive: true });
+    fs.writeFileSync(path.join(updateDir, options.name), 'brand new');
+    fs.writeFileSync(
+      path.join(updateDir, 'version.json'),
+      JSON.stringify({
+        version: options.version ?? '1.1.0',
+        file: options.manifestFile,
+        sha256: sha(Buffer.from('brand new'))
+      })
+    );
+    return updateDir;
+  }
+
+  it('4f. installs a build whose release names it the way the host stores it', async () => {
+    /*
+     * This is the release as it is actually published: the asset is stored as
+     * `Easy.Project.Compiler.exe`, while the app downloads it as `Easy Project Compiler.exe`. A whole
+     * released build reported «готово» to its testers and never installed anything, because the staged
+     * file was looked for under the manifest's name only.
+     */
+    const updateDir = stageUnder({ name: EXE_NAME, manifestFile: 'Easy.Project.Compiler.exe' });
+    const staged = readStagedUpdate(updateDir, '1.0.0');
+    expect(staged?.manifest.version).toBe('1.1.0');
+    expect(fs.readFileSync(staged!.file, 'utf8')).toBe('brand new');
+
+    // And that is the file the swap moves: scheduling has to be able to start from it.
+    const scheduled = scheduleUpdateInstall({
+      updateDir,
+      exeName: EXE_NAME,
+      version: '1.0.0',
+      relaunch: true,
+      log: () => {},
+      spawnImpl: () => ({ unref: () => {} })
+    });
+    expect(scheduled.scheduled).toBe(true);
+    expect(scheduled.version).toBe('1.1.0');
+  });
+
+  it('4g. a stage under the manifest’s own name is still accepted', () => {
+    // Nothing this app writes is staged that way, but a folder prepared by hand — or by a future
+    // release format — must not turn into an update that is reported and then thrown away.
+    const updateDir = stageUnder({ name: 'Build.exe', manifestFile: 'Build.exe' });
+    expect(readStagedUpdate(updateDir, '1.0.0')?.manifest.version).toBe('1.1.0');
+  });
+
+  it('4h. a build the tester renamed still replaces itself', () => {
+    /*
+     * The name a person keeps their .exe under is the name the swap moves, so it is the name the
+     * download is staged under — and the name the staged file has to be found by.
+     */
+    const updateDir = stageUnder({ name: 'EPC 1.0.exe', manifestFile: 'Easy.Project.Compiler.exe' });
+    expect(readStagedUpdate(updateDir, '1.0.0', 'EPC 1.0.exe')?.manifest.version).toBe('1.1.0');
+
+    const scheduled = scheduleUpdateInstall({
+      updateDir,
+      exeName: 'EPC 1.0.exe',
+      version: '1.0.0',
+      relaunch: false,
+      log: () => {},
+      spawnImpl: () => ({ unref: () => {} })
+    });
+    expect(scheduled.scheduled).toBe(true);
+    expect(fs.readFileSync(path.join(updateDir, 'apply-update.cmd'), 'utf8')).toContain(
+      'set "FRESH=%~dp0EPC 1.0.exe"'
+    );
   });
 });
