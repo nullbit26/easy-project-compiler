@@ -153,9 +153,10 @@ function appContext(report, run) {
   const parts = [
     `window ${JSON.stringify(facts.layout?.viewport ?? null)}`,
     `screenshot ${facts.screenshot ? 'saved' : 'not saved'}`,
-    `on screen ${oneLine(facts.probe?.bodyText, 200)}`,
-    `sidebar ${oneLine(facts.probe?.asideText, 80)}`,
-    `app said ${oneLine(run.log(), 400)}`
+    `on screen ${oneLine(facts.probe?.bodyText, 160)}`,
+    `footer ${oneLine(facts.layout?.footerText, 80)}`,
+    `page said ${oneLine((facts.pageConsole || []).slice(-4).join(' | '), 300)}`,
+    `app said ${oneLine(run.log(), 200)}`
   ];
   return `the app, when its checks failed: ${parts.join(' · ')}`;
 }

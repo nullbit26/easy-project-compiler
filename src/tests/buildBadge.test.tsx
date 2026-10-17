@@ -43,6 +43,22 @@ describe('the build badge', () => {
     expect(await screen.findByText('261015-1432-ab12')).toBeInTheDocument();
   });
 
+  it('names the release and the build together when the build carries both', async () => {
+    // Two builds of one release are exactly the case this badge exists for: reinstalling 1.0.0 and
+    // still seeing the old screen. The id is what tells them apart, so it is always there; the
+    // release number leads because that is the question a person is actually asking.
+    mockHealth({ build: { id: '261015-1432-ab12', version: '1.0.0', mode: 'desktop' } });
+
+    render(
+      <LanguageProvider>
+        <BuildBadge />
+      </LanguageProvider>
+    );
+
+    const badge = await screen.findByText(/261015-1432-ab12/);
+    expect(badge.textContent).toBe('v1.0.0 · 261015-1432-ab12');
+  });
+
   it('stays quiet on a development run, which has no build id', async () => {
     mockHealth({ build: { id: 'dev', mode: 'development' } });
 

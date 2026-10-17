@@ -12,8 +12,21 @@ import { contextBridge, ipcRenderer } from 'electron';
 const CHANNEL = 'epc:window';
 const STATE_CHANNEL = 'epc:window:maximized';
 
+/**
+ * Whether this run is the app checking itself (`--self-test`), told to the page by the shell.
+ *
+ * The app's own self-test measures the window as a person sees it, and the launch animation covers
+ * that window for the first two and a half seconds. A check that wants to look at the app must not
+ * be looking at the curtain — and it cannot take the curtain down itself either: the overlay belongs
+ * to React, and a node React no longer owns is a page that tears itself apart the next time the
+ * overlay is hidden. So the shell says who started it, and the app does not draw the animation at
+ * all.
+ */
+const SELF_TEST_SWITCH = '--epc-self-test';
+
 contextBridge.exposeInMainWorld('desktopWindow', {
   minimize: () => ipcRenderer.send(CHANNEL, 'minimize'),
+  selfTest: process.argv.includes(SELF_TEST_SWITCH),
   toggleMaximize: () => ipcRenderer.send(CHANNEL, 'toggle-maximize'),
   close: () => ipcRenderer.send(CHANNEL, 'close'),
   isMaximized: () => ipcRenderer.invoke(`${CHANNEL}:is-maximized`) as Promise<boolean>,

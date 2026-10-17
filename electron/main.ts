@@ -116,6 +116,9 @@ function journal(step: string): void {
   }
 }
 
+/** The last things the page said, for the self-test report to carry out of a window nobody sees. */
+const pageConsole: string[] = [];
+
 let mainWindow: BrowserWindow | null = null;
 let windowAllClosedFired = false;
 /** The update service, once the window that shows it exists. */
@@ -154,6 +157,8 @@ const distDir = process.env.EPC_DIST_DIR || path.join(__dirname, 'dist');
  * It sits next to this file in every build (see tools/desktop/build-desktop.mjs).
  */
 const preloadPath = path.join(__dirname, 'preload.cjs');
+/** Must match `SELF_TEST_SWITCH` in preload.ts: the same word, passed to the page. */
+const SELF_TEST_SWITCH = '--epc-self-test';
 /**
  * The app's own mark, for the window's corner and for the taskbar.
  *
@@ -531,12 +536,34 @@ function createWindow(url: string): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      // The page is told when the app is checking itself, so it can leave out the launch animation:
+      // the self-test measures the window it would otherwise be looking at through a curtain.
+      additionalArguments: SELF_TEST_FILE ? [SELF_TEST_SWITCH] : [],
       // Missing when running the shell straight from source without a bundle: the page then simply
       // has no window buttons and behaves like the browser build.
       preload: fs.existsSync(preloadPath) ? preloadPath : undefined
     }
   });
   win.setMenuBarVisibility(false);
+
+  /*
+   * What the page itself says, kept for the self-test report.
+   *
+   * A check that fails names what was wrong and never why: a badge that never appeared, a fetch
+   * that never answered. The page says those things out loud, and on a machine with nobody at it the
+   * report is the only place they can be heard. Electron has moved this event from positional
+   * arguments to a single detail object, so both shapes are read.
+   */
+  win.webContents.on('console-message', (...args: unknown[]) => {
+    const details = args.find((arg) => arg && typeof arg === 'object' && 'message' in (arg as object)) as
+      | { level?: number | string; message?: string; lineNumber?: number }
+      | undefined;
+    const message = details?.message ?? (typeof args[2] === 'string' ? args[2] : '');
+    const level = details?.level ?? args[1];
+    if (!message) return;
+    pageConsole.push(`[${String(level)}] ${message.replace(/\s+/g, ' ').trim().slice(0, 240)}`);
+    if (pageConsole.length > 40) pageConsole.shift();
+  });
 
   // The window's own title stays the one set above; the app's name and build id are drawn in the
   // app's title bar, so a page title would only fight with it.
@@ -1336,21 +1363,25 @@ async function runSelfTest(win: BrowserWindow, url: string): Promise<void> {
   check('the app shell is rendered in the window', rendered, rendered ? '' : 'no children under #root');
 
   /*
-   * The launch animation is taken down before anything is measured.
-   *
-   * Every check below is about the screen the app settles on — the title bar, the sidebar, the
-   * board — and the animation is drawn over all of it for the first two and a half seconds. It is a
+   * Every check below is about the screen the app settles on — the title bar, the sidebar, the board
+   * — and the launch animation is drawn over all of it for the first two and a half seconds. It is a
    * real part of the window and it is checked by hand in the preview; here it would only report on
    * itself, and measuring the app through a curtain is how a layout check starts failing for a
    * reason that has nothing to do with the layout.
+   *
+   * The animation used to be taken out of the document by hand here. That is a page removing a node
+   * React still owns: when the overlay's own timer fires and React hides it, the node is already
+   * gone, the removal throws, and the app comes apart — an empty window a moment after it was
+   * measured. So the shell says it is a self-test (see `additionalArguments` in createWindow) and the
+   * app leaves the animation out; this checks that the word arrived.
    */
-  await win.webContents.executeJavaScript(
-    `(() => {
-      const splash = document.querySelector('[data-testid="launch-splash"]');
-      if (splash) splash.remove();
-      return true;
-    })()`,
-    true
+  check(
+    'the app knows it is the one being checked, so no launch animation hides it',
+    (await win.webContents.executeJavaScript(
+      `!document.querySelector('[data-testid="launch-splash"]')`,
+      true
+    )) === true,
+    'a launch animation was drawn over the window'
   );
 
   let probe: Record<string, any> | null = null;
@@ -1390,6 +1421,7 @@ async function runSelfTest(win: BrowserWindow, url: string): Promise<void> {
   );
 
   report.facts.externalRequests = externalRequests.slice(0, 10);
+  report.facts.pageConsole = pageConsole.slice(-40);
 
   // The frame the app draws itself, and the delete button that used to be impossible to find.
   await checkWindowChrome(win);

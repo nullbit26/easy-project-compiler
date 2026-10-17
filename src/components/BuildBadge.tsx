@@ -58,11 +58,21 @@ export const BuildBadge: React.FC = () => {
     .filter(Boolean)
     .join('\n');
 
-  // Plain small print, no pill: the number is there to be read when it is needed, not to be noticed.
-  // The version leads when the build carries one; the build id stays a word away in the tooltip.
+  /*
+   * Both numbers, because they answer different questions.
+   *
+   * A person asks "which version is this?", and the release number answers it. A machine asks "which
+   * build is this?", and only the id answers it — reinstalling the same release and still seeing the
+   * old screen is the failure this badge exists for, and a version cannot tell those two apart. The
+   * id is also what the app's own self-test looks for in this footer, which is how the two numbers
+   * were found disagreeing: the badge named the version and the check demanded the build.
+   */
+  const shown = build?.version && build.version !== '0.0.0' ? `v${build.version} · ${id}` : id;
+
+  // Plain small print, no pill: the numbers are there to be read when they are needed, not to be noticed.
   return (
     <span title={details} className="font-mono text-[10px] text-slate-400 whitespace-nowrap cursor-default">
-      {build?.version && build.version !== '0.0.0' ? `v${build.version}` : id}
+      {shown}
     </span>
   );
 };

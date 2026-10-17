@@ -49,24 +49,9 @@ jobs:
           fi
 
       - name: Typecheck and unit tests
-        shell: bash
         run: |
-          set -o pipefail
-          mkdir -p build
-          npm run lint 2>&1 | tee build/checks.log
-          npm test 2>&1 | tee -a build/checks.log
-
-      # Temporary: a runner's own log needs a token to read, while its annotations do not — so the end
-      # of a failed check is said as annotations, where the failure can actually be seen.
-      - name: Say what failed
-        if: failure()
-        shell: bash
-        run: |
-          if [ -f build/checks.log ]; then
-            tail -c 5000 build/checks.log | while IFS= read -r line; do
-              echo "::error::$line"
-            done
-          fi
+          npm run lint
+          npm test
 
       - name: Build the portable app
         env:

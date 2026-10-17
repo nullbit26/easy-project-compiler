@@ -5,6 +5,8 @@ import logo from '../assets/epc-logo.webp';
 
 /** The bridge electron/preload.ts puts on the page; absent when the page runs in a browser. */
 interface DesktopWindowBridge {
+  /** True when the shell started this window to check itself (`--self-test`). */
+  selfTest?: boolean;
   minimize: () => void;
   toggleMaximize: () => void;
   close: () => void;
