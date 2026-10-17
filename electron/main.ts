@@ -608,6 +608,29 @@ async function waitForRender(win: BrowserWindow, timeoutMs = 30000): Promise<boo
   return false;
 }
 
+/**
+ * Polls the page until an expression answers with something, and hands that answer back.
+ *
+ * `waitUntil` asks a yes/no question, which is enough for most checks. This one is for the checks
+ * that need the number they were asking about: a zone that has been dragged is measured once the
+ * board has drawn where the zone landed, and the answer — the gap to its neighbour — is the whole
+ * point. Asking once and measuring in the same breath reads the frame the pointer left behind, which
+ * is where the zone was during the drag, not where it was put down.
+ */
+async function waitForValue<T>(win: BrowserWindow, expression: string, timeoutMs = 6000): Promise<T | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const value = await win.webContents.executeJavaScript(expression, true);
+      if (value !== null && value !== undefined && value !== false) return value as T;
+    } catch {
+      /* the page is busy rendering; ask again */
+    }
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+  return null;
+}
+
 /** Polls the page until an expression is true, so a check never races a re-render. */
 async function waitUntil(win: BrowserWindow, expression: string, timeoutMs = 6000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
@@ -1177,18 +1200,28 @@ async function checkPlanBoard(win: BrowserWindow): Promise<void> {
     })()`,
     4000
   );
-  const apart = await win.webContents.executeJavaScript(
+  const measureApart = `(() => {
+    const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+    const lane = box('[data-testid="plan-lane-blocked"]');
+    const next = box('[data-testid="plan-lane-done"]');
+    return { gap: Math.round(next.left - lane.right), moved: Math.round(lane.left) };
+  })()`;
+  // Waited for rather than read once: the zone is drawn where the pointer left it until the board
+  // redraws it where it landed, and the check is about where it landed.
+  const drawnApart = await waitForValue<{ gap: number; moved: number }>(
+    win,
     `(() => {
-      const box = (selector) => document.querySelector(selector).getBoundingClientRect();
-      const lane = box('[data-testid="plan-lane-blocked"]');
-      const next = box('[data-testid="plan-lane-done"]');
-      return { gap: Math.round(next.left - lane.right), moved: Math.round(lane.left) };
+      const apart = ${measureApart};
+      return apart.gap >= -1 ? apart : null;
     })()`,
-    true
+    4000
   );
+  const apart =
+    drawnApart ??
+    ((await win.webContents.executeJavaScript(measureApart, true)) as { gap: number; moved: number });
   check(
     'a zone pushed sideways leans on its neighbour instead of lying on it',
-    leaning && apart.gap >= -1,
+    leaning && Boolean(drawnApart),
     `gap ${apart.gap}px, left ${apart.moved}px`
   );
 
