@@ -897,10 +897,33 @@ async function checkWindowChrome(win: BrowserWindow): Promise<void> {
  * draws its scrollbar in near-white (around 240 of 255); everything the app draws in these places
  * is between 2 and 70.
  */
+/**
+ * A picture of the window, taken once Chromium has a frame to give.
+ *
+ * The self-test's window is never shown (see boot), so a capture asked for in the first moments after
+ * the window exists is answered with `UnknownVizError` — there is nothing drawn yet. That is a fact
+ * about the moment, not about the window: the check is "the window can be pictured", and a release
+ * run has already failed on it for being asked too early. The wait is bounded and the last error is
+ * the one reported, so a window that genuinely cannot be pictured still fails the check.
+ */
+async function pictureOfWindow(win: BrowserWindow, timeoutMs = 8000): Promise<Electron.NativeImage> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown = null;
+  while (Date.now() < deadline) {
+    try {
+      return await win.webContents.capturePage();
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  throw lastError ?? new Error('the window could not be pictured');
+}
+
 async function checkPixels(win: BrowserWindow): Promise<void> {
   let image;
   try {
-    image = await win.webContents.capturePage();
+    image = await pictureOfWindow(win);
   } catch (error) {
     check('the window can be pictured', false, (error as Error)?.message ?? String(error));
     return;
@@ -1007,12 +1030,22 @@ async function checkPlanBoard(win: BrowserWindow): Promise<void> {
   await win.webContents.executeJavaScript("location.hash = '#/plan'; true", true);
 
   const boardShown = await waitUntil(win, `Boolean(document.querySelector('[data-testid="plan-canvas"]'))`, 10000);
-  const cards = boardShown
-    ? await win.webContents.executeJavaScript(
-        `document.querySelectorAll('[data-testid^="plan-card-"]').length`,
-        true
-      )
-    : 0;
+  /*
+    The canvas is on screen before the plan's cards are: the screen reads the project after mounting
+    and draws the tasks then, so a count read the moment the canvas appears can see three of four.
+    The check is that the whole plan is on the board, so the count is waited for rather than read
+    once — the same reason the dragged zone is measured with waitForValue.
+  */
+  const cardCount = `document.querySelectorAll('[data-testid^="plan-card-"]').length`;
+  let cards = 0;
+  if (boardShown) {
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      cards = await win.webContents.executeJavaScript(cardCount, true);
+      if (cards === 4) break;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+  }
   check('the plan opens as a board with the whole plan on it', rendered && boardShown && cards === 4, `cards: ${cards}`);
   if (!boardShown) return;
 
