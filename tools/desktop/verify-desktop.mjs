@@ -138,6 +138,28 @@ function reportSelfTestFailures(report, label) {
   return failed.length;
 }
 
+/**
+ * What the app saw, in one line, when its own checks failed.
+ *
+ * The names of the failed checks say what was wrong and nothing about why: a check about a missing
+ * element needs the screen the app was on when it looked, and a check about a window needs the size
+ * it had. This is printed as an annotation before any other, because a runner keeps only the first
+ * few — and on a machine with no screen the app's own account of the run is the only one there is.
+ */
+function appContext(report, run) {
+  const oneLine = (value, limit) =>
+    JSON.stringify(String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, limit));
+  const facts = report?.facts ?? {};
+  const parts = [
+    `window ${JSON.stringify(facts.layout?.viewport ?? null)}`,
+    `screenshot ${facts.screenshot ? 'saved' : 'not saved'}`,
+    `on screen ${oneLine(facts.probe?.bodyText, 200)}`,
+    `sidebar ${oneLine(facts.probe?.asideText, 80)}`,
+    `app said ${oneLine(run.log(), 400)}`
+  ];
+  return `the app, when its checks failed: ${parts.join(' · ')}`;
+}
+
 /** A folder of its own for every run, with its own copy of the published .exe. */
 function freshFolder(name) {
   const folder = path.join(sandbox, name);
@@ -181,6 +203,7 @@ try {
   started.push(run.child);
   const code = await waitForExit(run.child, LAUNCH_TIMEOUT_MS);
   const report = readJson(selfTestFile);
+  if (report?.failed) console.log(`::error::${appContext(report, run)}`);
   check(
     'the app checks itself through its own window and exits cleanly',
     code === 0 && report?.failed === 0,
@@ -230,6 +253,7 @@ try {
     rebuiltReport?.facts?.buildChanged === true && rebuiltReport?.facts?.previousBuildId === '000000-0000-old1',
     JSON.stringify(rebuiltReport?.facts?.previousBuildId)
   );
+  if (rebuiltReport?.failed) console.log(`::error::${appContext(rebuiltReport, rebuilt)}`);
   reportSelfTestFailures(rebuiltReport, 'rebuilt run');
   check(
     'it drops the old screen and renders its own',
@@ -343,6 +367,7 @@ try {
     takeoverReport?.facts?.otherBuildClosed === true && takeoverReport?.facts?.otherBuildAskedToClose === true,
     JSON.stringify(takeoverReport?.facts?.otherBuildClosed)
   );
+  if (takeoverReport?.failed) console.log(`::error::${appContext(takeoverReport, newer)}`);
   reportSelfTestFailures(takeoverReport, 'takeover run');
   check(
     'the build that was just started renders its own screen and passes its own checks',

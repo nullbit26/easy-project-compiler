@@ -62,9 +62,11 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          tail -c 5000 build/checks.log | while IFS= read -r line; do
-            echo "::error::$line"
-          done
+          if [ -f build/checks.log ]; then
+            tail -c 5000 build/checks.log | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+          fi
 
       - name: Build the portable app
         env:
