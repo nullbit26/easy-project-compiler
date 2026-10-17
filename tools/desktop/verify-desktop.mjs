@@ -82,7 +82,9 @@ function processAlive(pid) {
   }
 }
 
-function startApp(exe, args = [], extraEnv = {}) {
+const appRuns = [];
+
+function startApp(exe, args = [], extraEnv = {}, label = 'приложение') {
   const child = spawn(exe, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, ...extraEnv }
@@ -90,7 +92,9 @@ function startApp(exe, args = [], extraEnv = {}) {
   let log = '';
   child.stdout.on('data', (chunk) => (log += chunk.toString()));
   child.stderr.on('data', (chunk) => (log += chunk.toString()));
-  return { child, log: () => log };
+  const run = { child, log: () => log };
+  appRuns.push({ label, run });
+  return run;
 }
 
 function stopTree(child) {
@@ -173,7 +177,7 @@ try {
   // ------------------------------- 1. a fresh copy checks itself, in a folder of its own
   const first = freshFolder('тестер-1');
   const selfTestFile = path.join(sandbox, 'self-test-1.json');
-  const run = startApp(first.exe, [`--self-test=${selfTestFile}`]);
+  const run = startApp(first.exe, [`--self-test=${selfTestFile}`], {}, 'первый запуск');
   started.push(run.child);
   const code = await waitForExit(run.child, LAUNCH_TIMEOUT_MS);
   const report = readJson(selfTestFile);
@@ -217,7 +221,7 @@ try {
   fs.writeFileSync(stateInFirstFolder, `${JSON.stringify({ ...remembered, buildId: '000000-0000-old1' }, null, 2)}\n`);
 
   const rebuiltFile = path.join(sandbox, 'self-test-1b.json');
-  const rebuilt = startApp(first.exe, [`--self-test=${rebuiltFile}`]);
+  const rebuilt = startApp(first.exe, [`--self-test=${rebuiltFile}`], {}, 'запуск после пересборки');
   started.push(rebuilt.child);
   const rebuiltCode = await waitForExit(rebuilt.child, LAUNCH_TIMEOUT_MS);
   const rebuiltReport = readJson(rebuiltFile);
@@ -246,7 +250,7 @@ try {
   // --------------------------------------- 2. the packaged app answers like the app it is
   const statePath = path.join(first.folder, 'data', 'app-state.json');
   const wasRecorded = readJson(statePath)?.launchedAt ?? null;
-  const second = startApp(first.exe);
+  const second = startApp(first.exe, [], {}, 'второй запуск');
   started.push(second.child);
   // Wait for *this* run to record itself: the file left by the previous run is still there.
   const state = await waitForValue(
@@ -297,14 +301,14 @@ try {
   // ------------- 3. two copies of the app next to each other, the way a person really starts them
   const third = freshFolder('тестер-2');
   const thirdStatePath = path.join(third.folder, 'data', 'app-state.json');
-  const older = startApp(third.exe);
+  const older = startApp(third.exe, [], {}, 'первая копия');
   started.push(older.child);
   const olderState = await waitForValue(() => readJson(thirdStatePath), LAUNCH_TIMEOUT_MS);
   check('the first copy is running before anything else starts', processAlive(olderState?.pid), String(olderState?.pid));
 
   // 3a — the same build started twice: the window that exists comes forward, no twin, no crash.
   const twinFile = path.join(sandbox, 'self-test-2.json');
-  const twin = startApp(third.exe, [`--self-test=${twinFile}`]);
+  const twin = startApp(third.exe, [`--self-test=${twinFile}`], {}, 'вторая копия');
   started.push(twin.child);
   const twinCode = await waitForExit(twin.child, LAUNCH_TIMEOUT_MS);
   const twinReport = readJson(twinFile);
@@ -321,11 +325,16 @@ try {
 
   // 3b — another build started while this one is open: the old window must not answer again.
   const takeoverFile = path.join(sandbox, 'self-test-3.json');
-  const newer = startApp(third.exe, [`--self-test=${takeoverFile}`], {
-    // Pretends to be another build, which is exactly what happens when a rebuilt .exe is started
-    // while the previous one is still open.
-    EPC_BUILD_ID_OVERRIDE: '999999-9999-fake'
-  });
+  const newer = startApp(
+    third.exe,
+    [`--self-test=${takeoverFile}`],
+    {
+      // Pretends to be another build, which is exactly what happens when a rebuilt .exe is started
+      // while the previous one is still open.
+      EPC_BUILD_ID_OVERRIDE: '999999-9999-fake'
+    },
+    'новая сборка поверх открытой'
+  );
   started.push(newer.child);
   const newerCode = await waitForExit(newer.child, LAUNCH_TIMEOUT_MS);
   const takeoverReport = readJson(takeoverFile);
@@ -390,4 +399,33 @@ for (const result of results) {
   if (!result.ok) console.log(`::error::${line}`);
 }
 console.log(`\n${results.length - failures}/${results.length} checks passed`);
+writeFailureSummary();
 process.exit(failures > 0 ? 1 : 0);
+
+/**
+ * The whole failure, in the one place a machine nobody is sitting at can be read from.
+ *
+ * Annotations carry the failing check names but are capped and trimmed, and the reason a check
+ * failed is usually in the application's own output: which build it thinks it is, what it saw, what
+ * it could not find. On a build server that output is written to the job summary, which is part of
+ * the run and readable without a token. Everywhere else — a developer's machine — nothing is
+ * written and the console above stays the whole story.
+ */
+function writeFailureSummary() {
+  const file = process.env.GITHUB_STEP_SUMMARY;
+  if (!file || failures === 0) return;
+  const lines = ['## Проверка приложения: что не прошло', ''];
+  for (const result of results) {
+    if (!result.ok) lines.push(`- **${result.name}**${result.detail ? ` — ${result.detail}` : ''}`);
+  }
+  for (const { label, run } of appRuns) {
+    const text = run.log().trim();
+    if (!text) continue;
+    lines.push('', `<details><summary>Вывод приложения: ${label}</summary>`, '', '```', text.slice(-8000), '```', '', '</details>');
+  }
+  try {
+    fs.appendFileSync(file, `${lines.join('\n')}\n`);
+  } catch (error) {
+    console.log(`· сводка не записана (${error?.code ?? 'error'})`);
+  }
+}
