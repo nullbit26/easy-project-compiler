@@ -128,6 +128,18 @@ function draftBranchName(): string {
   return `ai/work-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/**
+ * A list out of a reply, whatever the reply turned out to be.
+ *
+ * The panel draws a whole screen from one answer from the server, so an answer it does not fully
+ * recognise — an older server, a reply cut short — must read as "nothing to show" instead of
+ * taking the screen down with it. The list is also read again while the screen renders, and a value
+ * that changes shape between those two reads is exactly how a crash reaches a render.
+ */
+function asList<T>(value: readonly T[] | undefined | null): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
 function branchStateLabel(state: GitBranchDiff['files'][number]['state'], ru: boolean): string {
   if (state === 'added') return ru ? 'новый' : 'new';
   if (state === 'deleted') return ru ? 'удалён' : 'deleted';
@@ -196,13 +208,14 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
     setLoadError('');
     try {
       const result = await fetchGitStatusApi(language);
-      setStatus(result);
+      const changed = asList(result?.files);
+      setStatus({ ...result, files: changed });
       // New files are what the user means by "save this": they start ticked, unless they look
       // like a secret (those are listed, but never ticked for you).
       setSelected((previous) => {
-        const stillThere = previous.filter((path) => result.files.some((file) => file.path === path));
+        const stillThere = previous.filter((path) => changed.some((file) => file.path === path));
         if (stillThere.length > 0) return stillThere;
-        return result.files.filter((file) => !file.sensitive).map((file) => file.path);
+        return changed.filter((file) => !file.sensitive).map((file) => file.path);
       });
       if (announce) setCommitHint('');
     } catch (err: any) {
@@ -221,10 +234,11 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
     setIsBranchLoading(true);
     try {
       const result = await fetchGitBranchesApi(language);
-      setBranches(result);
+      const listed = asList(result?.branches);
+      setBranches({ ...result, branches: listed });
       // The comparison starts on the branch this work came from, which is the useful default.
       setCompareBase((previous) =>
-        previous && result.branches.some((branch) => branch.name === previous)
+        previous && listed.some((branch) => branch.name === previous)
           ? previous
           : result.suggestedBase || ''
       );

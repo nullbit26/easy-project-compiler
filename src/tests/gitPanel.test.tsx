@@ -285,4 +285,20 @@ describe('Git panel', () => {
     expect(screen.getByText('git init')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Сохранить версию/ })).toBeNull();
   });
+
+  it('7. reads a reply without a file list as an empty list, not as a broken screen', async () => {
+    // The server always names the files it found. A reply this build does not fully recognise — an
+    // older server, an answer cut short — still has to leave a screen that works, because the
+    // selection is derived from that reply while the screen renders, and a reply that changes shape
+    // between the two reads is exactly how a crash reaches a render.
+    statusMock.mockResolvedValue({ available: true, isRepo: true, branch: 'feature' });
+    branchesMock.mockResolvedValue({ available: true, isRepo: true, current: 'feature' });
+
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByText('Изменённые файлы (0)')).toBeTruthy());
+    expect(screen.getByText('feature')).toBeTruthy();
+    // Nothing was offered to save, so nothing can be saved by accident.
+    expect((screen.getByRole('button', { name: /Сохранить версию \(0\)/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
 });
