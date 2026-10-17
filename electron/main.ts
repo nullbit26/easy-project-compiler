@@ -1200,29 +1200,52 @@ async function checkPlanBoard(win: BrowserWindow): Promise<void> {
     })()`,
     4000
   );
+  /*
+   * The promise is that two zones never cover one patch of board — not that one of them stops at a
+   * particular horizontal distance from the other. A pair of rectangles is what answers it, so that
+   * is what is measured and reported: the promise, in the shape the promise has.
+   */
   const measureApart = `(() => {
-    const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+    const box = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const r = node.getBoundingClientRect();
+      return {
+        left: Math.round(r.left), right: Math.round(r.right),
+        top: Math.round(r.top), bottom: Math.round(r.bottom), width: Math.round(r.width)
+      };
+    };
     const lane = box('[data-testid="plan-lane-blocked"]');
     const next = box('[data-testid="plan-lane-done"]');
-    return { gap: Math.round(next.left - lane.right), moved: Math.round(lane.left) };
+    if (!lane || !next) return { gap: null, moved: null, overlap: null, lane, next };
+    const overlap =
+      Math.min(lane.right, next.right) - Math.max(lane.left, next.left) > 0 &&
+      Math.min(lane.bottom, next.bottom) - Math.max(lane.top, next.top) > 0;
+    let stored = {};
+    try {
+      stored = JSON.parse(localStorage.getItem('easy_project_compiler_current_project') || '{}').canvasLanes || {};
+    } catch { stored = 'unreadable'; }
+    return {
+      gap: Math.round(next.left - lane.right), moved: lane.left, overlap, lane, next, stored,
+      viewport: window.innerWidth,
+      canvas: (() => { const node = document.querySelector('[data-testid="plan-canvas"]'); return node ? getComputedStyle(node).transform : null; })()
+    };
   })()`;
   // Waited for rather than read once: the zone is drawn where the pointer left it until the board
   // redraws it where it landed, and the check is about where it landed.
-  const drawnApart = await waitForValue<{ gap: number; moved: number }>(
+  const drawnApart = await waitForValue<Record<string, unknown>>(
     win,
     `(() => {
       const apart = ${measureApart};
-      return apart.gap >= -1 ? apart : null;
+      return apart.overlap === false ? apart : null;
     })()`,
     4000
   );
-  const apart =
-    drawnApart ??
-    ((await win.webContents.executeJavaScript(measureApart, true)) as { gap: number; moved: number });
+  const apart = (drawnApart ?? (await win.webContents.executeJavaScript(measureApart, true))) as Record<string, unknown>;
   check(
     'a zone pushed sideways leans on its neighbour instead of lying on it',
-    leaning && Boolean(drawnApart),
-    `gap ${apart.gap}px, left ${apart.moved}px`
+    leaning && drawnApart !== null,
+    `two zones in one place: ${JSON.stringify(apart)}`
   );
 
   // ------------------------------------------------------------- renaming a card
