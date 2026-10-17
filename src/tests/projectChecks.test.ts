@@ -266,7 +266,14 @@ describe('Running a check', () => {
     const report = await runVerification({ root: projectRoot, customCommand: 'dotnet build' });
     // Either dotnet exists on this machine (and fails on this empty folder) or it is missing.
     expect(['failed', 'unavailable']).toContain(report.results[0].status);
-  });
+    /*
+     * The assertion is about the outcome, never about the speed — but this one starts a real SDK
+     * when the machine has one, and a cold release runner needs a few seconds before the CLI says
+     * anything at all. The default five seconds measured the runner, not the app: it failed a
+     * release run on a machine where dotnet is simply slower to start than on the machine the test
+     * was written on.
+     */
+  }, 30_000);
 
   it('17. never reports an empty run as a passing run', async () => {
     writeProjectFile('package.json', JSON.stringify({ scripts: { build: 'node -e "process.exit(0)"' } }));
