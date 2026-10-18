@@ -4,6 +4,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { buildSandboxDocument } from '../utils/sandboxDocument';
 import { ApiError, buildPreviewApi, PreviewBuild, PreviewDiagnostic } from '../services/api';
 import { formatBytes } from '../utils/byteSize';
+import { useCopyFlash } from '../utils/copyText';
 import {
   Play,
   RotateCcw,
@@ -18,6 +19,7 @@ import {
   Check,
   Copy,
   AlertCircle,
+  AlertTriangle,
   FolderOpen,
   Package,
   FileCode,
@@ -58,7 +60,7 @@ export const CodePreviewRunner: React.FC<CodePreviewRunnerProps> = ({
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
-  const [copied, setCopied] = useState(false);
+  const copyFlash = useCopyFlash(2000);
   const [snippetCode, setSnippetCode] = useState('');
   const [aspectRatio, setAspectRatio] = useState<'desktop' | 'mobile' | 'square'>('desktop');
 
@@ -174,10 +176,8 @@ export const CodePreviewRunner: React.FC<CodePreviewRunnerProps> = ({
     return runtimeError || logs.find((log) => log.type === 'error')?.text || '';
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(snippetCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    await copyFlash.copy(snippetCode);
   };
 
   const frameSize = () => {
@@ -632,8 +632,20 @@ export const CodePreviewRunner: React.FC<CodePreviewRunnerProps> = ({
                       onClick={handleCopy}
                       className="text-[10px] text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
                     >
-                      {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      <span>{copied ? t.common.copied : t.common.copy}</span>
+                      {copyFlash.state === 'copied' ? (
+                        <Check className="w-3 h-3 text-emerald-400" />
+                      ) : copyFlash.state === 'failed' ? (
+                        <AlertTriangle className="w-3 h-3 text-amber-400" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                      <span>
+                        {copyFlash.state === 'copied'
+                          ? t.common.copied
+                          : copyFlash.state === 'failed'
+                          ? t.common.copyFailed
+                          : t.common.copy}
+                      </span>
                     </button>
                   </div>
                   <textarea

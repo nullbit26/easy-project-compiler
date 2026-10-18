@@ -49,6 +49,19 @@ contextBridge.exposeInMainWorld('desktopWindow', {
  */
 const UPDATE_STATE_CHANNEL = 'epc:update:state-changed';
 
+/**
+ * Putting text on the clipboard, through the shell.
+ *
+ * `navigator.clipboard.writeText` asks the window for a permission, and a copy button that depends
+ * on the answer of a permission handler is a copy button that can stop working without anything
+ * saying so — which is exactly what happened: every permission came back «нет» and the buttons
+ * reported success anyway. The main process writes to the system clipboard with no permission
+ * involved. Only writing is offered; the page never gets to read somebody else's clipboard.
+ */
+contextBridge.exposeInMainWorld('desktopClipboard', {
+  write: (text: string) => ipcRenderer.invoke('epc:clipboard:write', String(text ?? '')) as Promise<boolean>
+});
+
 contextBridge.exposeInMainWorld('desktopUpdates', {
   state: () => ipcRenderer.invoke('epc:update:state') as Promise<unknown>,
   check: () => ipcRenderer.invoke('epc:update:check') as Promise<unknown>,

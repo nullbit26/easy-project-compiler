@@ -217,6 +217,37 @@ describe('Beginner step-by-step mode', () => {
     expect(callCount(spy, '/api/files/apply')).toBe(1);
   });
 
+  it('says the copy did not happen, instead of claiming it did', async () => {
+    /*
+     * Every button that copies used to set «Скопировано» without waiting for an answer, and in the
+     * desktop shell the answer was always a refusal — the permission handler said «нет» to
+     * everything, a clipboard write included. The button was then the only thing that changed.
+     */
+    const project = makeProject('Beginner / Non-coder');
+    localStorage.setItem('easy_project_compiler_current_project', JSON.stringify(project));
+    localStorage.setItem('easy_project_compiler_projects', JSON.stringify([project]));
+    localStorage.setItem('easy_project_compiler_lang', 'ru');
+
+    const writeText = vi.fn(() => Promise.reject(new Error('NotAllowedError')));
+    Object.assign(navigator, { clipboard: { writeText } });
+    document.execCommand = vi.fn(() => false) as unknown as typeof document.execCommand;
+    mockApi();
+
+    render(<App />);
+
+    await waitFor(() => expect(window.location.hash).not.toBe('#/simple'), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('button', { name: /Пошаговый помощник/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/simple'), { timeout: 4000 });
+    fireEvent.click(await screen.findByRole('button', { name: /Собрать промпт/ }));
+
+    const copy = await screen.findByRole('button', { name: /Скопировать промпт/ });
+    fireEvent.click(copy);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Не удалось/ })).toBeInTheDocument());
+    expect(writeText).toHaveBeenCalledWith('СОБРАННЫЙ ПРОМПТ ДЛЯ НОВИЧКА');
+    expect(screen.queryByRole('button', { name: /Скопировано/ })).toBeNull();
+  });
+
   it('hands the next attempt back as a prompt, instead of ending the loop at “build it again”', async () => {
     const project = makeProject('Beginner / Non-coder');
     localStorage.setItem('easy_project_compiler_current_project', JSON.stringify(project));

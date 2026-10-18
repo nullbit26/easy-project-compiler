@@ -3,7 +3,8 @@ import { ProjectState, ErrorDiagnosis } from '../types';
 import { diagnoseErrorApi } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import { autonomyOf } from '../utils/workingMode';
-import { Bug, Sparkles, Copy, Check, ArrowRight, ShieldAlert, Cpu, Code2, Loader2, Layers, HelpCircle } from 'lucide-react';
+import { Bug, Sparkles, Copy, Check, ArrowRight, ShieldAlert, Cpu, Code2, Loader2, Layers, HelpCircle, AlertTriangle } from 'lucide-react';
+import { useCopyFlash } from '../utils/copyText';
 
 interface VisualErrorCoachProps {
   project: ProjectState | null;
@@ -39,7 +40,7 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
   const [diagnosis, setDiagnosis] = useState<ErrorDiagnosis | null>(
     project?.recentErrors?.[0] || null
   );
-  const [copiedFix, setCopiedFix] = useState(false);
+  const fixCopy = useCopyFlash(2000);
 
   if (!project) {
     return (
@@ -119,11 +120,9 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
     }
   };
 
-  const handleCopyFixPrompt = () => {
+  const handleCopyFixPrompt = async () => {
     if (!diagnosis) return;
-    navigator.clipboard.writeText(diagnosis.repairPrompt);
-    setCopiedFix(true);
-    setTimeout(() => setCopiedFix(false), 2000);
+    await fixCopy.copy(diagnosis.repairPrompt);
   };
 
   return (
@@ -338,8 +337,20 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
                     onClick={handleCopyFixPrompt}
                     className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
                   >
-                    {copiedFix ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedFix ? t.common.copied : t.common.copy}</span>
+                    {fixCopy.state === 'copied' ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-300" />
+                    ) : fixCopy.state === 'failed' ? (
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span>
+                      {fixCopy.state === 'copied'
+                        ? t.common.copied
+                        : fixCopy.state === 'failed'
+                        ? t.common.copyFailed
+                        : t.common.copy}
+                    </span>
                   </button>
                 </div>
 

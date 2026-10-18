@@ -25,6 +25,7 @@ import {
 import { extractFilesFromAgentOutput } from '../utils/fileExtractor';
 import { autonomyOf } from '../utils/workingMode';
 import { journeyName, journeySentence } from '../utils/journeySteps';
+import { useCopyFlash } from '../utils/copyText';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -102,7 +103,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
   const [isCompiling, setIsCompiling] = useState(false);
 
   const [compiled, setCompiled] = useState<CompiledPrompt | null>(null);
-  const [promptCopied, setPromptCopied] = useState(false);
+  const promptCopy = useCopyFlash(2500);
 
   const [answer, setAnswer] = useState('');
   const [isReviewing, setIsReviewing] = useState(false);
@@ -112,7 +113,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
   // needs to say "the rest is still missing" instead of judging each answer as the first one. It is
   // kept on the task as well, so the loop survives a reload.
   const [attempts, setAttempts] = useState<ReviewAttempt[]>([]);
-  const [continuationCopied, setContinuationCopied] = useState(false);
+  const continuationCopy = useCopyFlash(2500);
 
   const [isWriting, setIsWriting] = useState(false);
   const [applyResult, setApplyResult] = useState<ApplyChangesResult | null>(null);
@@ -121,7 +122,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
   const [errorText, setErrorText] = useState('');
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [diagnosis, setDiagnosis] = useState<ErrorDiagnosis | null>(null);
-  const [fixCopied, setFixCopied] = useState(false);
+  const fixCopy = useCopyFlash(2500);
 
   const root = workspace?.root || null;
   const projectFiles = workspace?.files || [];
@@ -260,7 +261,8 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
         language
       });
       setCompiled(result);
-      setPromptCopied(false);
+      // A new prompt is a new thing to copy: the previous answer must not stand over it.
+      promptCopy.reset();
       goToStep(3);
     } catch (err: any) {
       setErrorMsg(err?.userMessage || err?.message || (language === 'ru' ? 'Не удалось собрать промпт.' : 'Could not build the prompt.'));
@@ -269,11 +271,9 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
     }
   };
 
-  const handleCopyPrompt = () => {
+  const handleCopyPrompt = async () => {
     if (!compiled) return;
-    navigator.clipboard.writeText(compiled.promptText);
-    setPromptCopied(true);
-    setTimeout(() => setPromptCopied(false), 2500);
+    await promptCopy.copy(compiled.promptText);
   };
 
   /* ---------------------------- step 4: check + write --------------------------- */
@@ -322,7 +322,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
         language
       });
       setReview(result);
-      setContinuationCopied(false);
+      continuationCopy.reset();
 
       const attempt: ReviewAttempt = {
         id: `attempt_${Date.now()}`,
@@ -396,12 +396,10 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
    * the prompt again from the task title, which throws the missing list away and starts the user's
    * memory doing the work the app had already done.
    */
-  const handleCopyContinuation = () => {
+  const handleCopyContinuation = async () => {
     const text = review?.continuationPrompt || '';
     if (!text.trim()) return;
-    navigator.clipboard.writeText(text);
-    setContinuationCopied(true);
-    setTimeout(() => setContinuationCopied(false), 2500);
+    await continuationCopy.copy(text);
   };
 
   const handleDiagnose = async () => {
@@ -424,11 +422,9 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
     }
   };
 
-  const handleCopyFix = () => {
+  const handleCopyFix = async () => {
     if (!diagnosis) return;
-    navigator.clipboard.writeText(diagnosis.repairPrompt);
-    setFixCopied(true);
-    setTimeout(() => setFixCopied(false), 2500);
+    await fixCopy.copy(diagnosis.repairPrompt);
   };
 
   /* ---------------------------------- render ---------------------------------- */
@@ -728,8 +724,16 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
               onClick={handleCopyPrompt}
               className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
             >
-              {promptCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              <span>{promptCopied ? s.promptCopied : s.copyPrompt}</span>
+              {promptCopy.state === 'copied' ? (
+                <Check className="w-4 h-4" />
+              ) : promptCopy.state === 'failed' ? (
+                <AlertTriangle className="w-4 h-4" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
+              <span>
+                {promptCopy.state === 'copied' ? s.promptCopied : promptCopy.state === 'failed' ? t.common.copyFailed : s.copyPrompt}
+              </span>
             </button>
             <button
               onClick={() => setStep(2)}
@@ -857,8 +861,20 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                       onClick={handleCopyContinuation}
                       className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3.5 py-2 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
                     >
-                      {continuationCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{continuationCopied ? s.continuationCopied : s.copyContinuation}</span>
+                      {continuationCopy.state === 'copied' ? (
+                        <Check className="w-3.5 h-3.5" />
+                      ) : continuationCopy.state === 'failed' ? (
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span>
+                        {continuationCopy.state === 'copied'
+                          ? s.continuationCopied
+                          : continuationCopy.state === 'failed'
+                          ? t.common.copyFailed
+                          : s.copyContinuation}
+                      </span>
                     </button>
                   </div>
                   <pre className="max-h-56 overflow-auto text-[11px] font-mono text-slate-200 whitespace-pre-wrap leading-relaxed">
@@ -893,7 +909,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                   onClick={() => {
                     setReview(null);
                     setAnswer('');
-                    setContinuationCopied(false);
+                    continuationCopy.reset();
                     setStep(2);
                   }}
                   className="text-xs font-bold text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
@@ -973,8 +989,14 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                   onClick={handleCopyFix}
                   className="text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-100 px-3 py-2 rounded-lg border border-slate-700 transition-colors cursor-pointer inline-flex items-center gap-1.5"
                 >
-                  {fixCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{s.copyFix}</span>
+                  {fixCopy.state === 'copied' ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : fixCopy.state === 'failed' ? (
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  <span>{fixCopy.state === 'failed' ? t.common.copyFailed : s.copyFix}</span>
                 </button>
               </div>
             )}

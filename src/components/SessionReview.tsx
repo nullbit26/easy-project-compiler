@@ -25,6 +25,7 @@ import { extractFilesFromAgentOutput } from '../utils/fileExtractor';
 import { localizeText } from '../utils/textLocalizer';
 import { autonomyOf } from '../utils/workingMode';
 import { journeyHeading, journeyNumber } from '../utils/journeySteps';
+import { useCopyFlash } from '../utils/copyText';
 
 /**
  * The id of the task the compiler named when the plan could not take it — a project with no phases
@@ -195,7 +196,7 @@ export const SessionReview: React.FC<SessionReviewProps> = ({
       : null
   );
   const [expandedAttemptIds, setExpandedAttemptIds] = useState<Record<string, boolean>>({});
-  const [copiedContinuation, setCopiedContinuation] = useState(false);
+  const continuationCopy = useCopyFlash(2000);
   /**
    * The prompt for the very first attempt opens folded.
    *
@@ -342,10 +343,8 @@ export const SessionReview: React.FC<SessionReviewProps> = ({
   const currentStepNumber = attempts.length + 1;
   const nextStepNumber = currentStepNumber;
 
-  const handleCopyContinuationPrompt = (promptText: string) => {
-    navigator.clipboard.writeText(promptText);
-    setCopiedContinuation(true);
-    setTimeout(() => setCopiedContinuation(false), 2000);
+  const handleCopyContinuationPrompt = async (promptText: string) => {
+    await continuationCopy.copy(promptText);
   };
 
   const handleApplyStatus = (status: 'completed' | 'partial' | 'blocked') => {
@@ -515,15 +514,19 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
             onClick={() => handleCopyContinuationPrompt(getContinuationPromptText())}
             className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
           >
-            {copiedContinuation ? (
+            {continuationCopy.state === 'copied' ? (
               <Check className="w-3.5 h-3.5 text-emerald-300" />
+            ) : continuationCopy.state === 'failed' ? (
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
             ) : (
               <Copy className="w-3.5 h-3.5" />
             )}
             {/* The first card holds the first prompt, not a continuation of one. */}
             <span>
-              {copiedContinuation
+              {continuationCopy.state === 'copied'
                 ? t.common.copied
+                : continuationCopy.state === 'failed'
+                ? t.common.copyFailed
                 : attempts.length === 0
                 ? t.review.copyPrompt
                 : t.review.copyContinuation}

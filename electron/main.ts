@@ -21,7 +21,7 @@
  * `--self-test=<file>` runs the whole thing without showing a window, checks it and writes a JSON
  * report — see tools/desktop/verify-desktop.mjs.
  */
-import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createUpdater, EXE_NAME, readStagedUpdate, scheduleUpdateInstall, stagedUpdateVersion, Updater } from './updates';
@@ -410,6 +410,24 @@ function installWindowControls(): void {
 }
 
 /**
+ * The page's way of putting text on the system clipboard.
+ *
+ * The page's own clipboard API asks the window for a permission, and this shell is the one answering
+ * that question — so a copy button's promise depends on getting that answer right, and one wrong
+ * answer turns every copying button in the app into a button that changes its label and nothing
+ * else. The main process writes to the clipboard with no permission to ask for, which is what makes
+ * «промпт скопирован» keepable. Writing only: the page can never read what is on the clipboard.
+ */
+function installClipboardBridge(): void {
+  ipcMain.handle('epc:clipboard:write', async (_event, text: unknown) => {
+    const value = typeof text === 'string' ? text : '';
+    if (!value) return false;
+    await clipboard.writeText(value);
+    return true;
+  });
+}
+
+/**
  * What the sidebar may ask about updates, and nothing more.
  *
  * Three questions, all answered by the shell: what is the state, please look again, and please put
@@ -490,7 +508,19 @@ function configureSession(buildChanged: boolean): void {
   // folder, so a stale screen can only be a cached one — drop it before the window opens.
   if (buildChanged) void ses.clearCache();
 
+  /*
+   * Nothing outside the app is allowed to ask this window for anything. Clipboard writes used to be
+   * caught by this too: the page called `navigator.clipboard.writeText`, this handler answered «нет»,
+   * the promise rejected, and the copy buttons changed their label anyway — the app could not put a
+   * prompt on the clipboard at all. Writing is not a permission any more: the page asks the shell
+   * (`window.desktopClipboard`, see installClipboardBridge and electron/preload.ts) and the main
+   * process writes to the system clipboard directly, with nothing to grant and nothing to refuse.
+   * Reading the clipboard from the page stays impossible.
+   */
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  // The same question, asked the other way: Chromium checks some permissions synchronously, and a
+  // handler that is not set answers «allow» — which is the wrong half of the same surprise.
+  ses.setPermissionCheckHandler(() => false);
 
   ses.webRequest.onHeadersReceived((details, callback) => {
     const incoming = details.responseHeaders ?? {};
@@ -886,6 +916,49 @@ async function checkWindowChrome(win: BrowserWindow): Promise<void> {
     'the footer still fits its column',
     typeof footerGrid?.overflow === 'number' && footerGrid.overflow <= 0,
     `overflow ${footerGrid?.overflow}px`
+  );
+}
+
+/**
+ * The window has to be able to put text on the clipboard.
+ *
+ * Every copying button in the app ends in the shell's clipboard bridge, and the shell used to answer
+ * every permission request with «нет» — so the page's own clipboard API refused, the buttons said
+ * «Скопировано» regardless, and the person pressing one found their clipboard unchanged. The proof
+ * is the operating system's clipboard rather than the page's belief about it: the page is asked to
+ * write through the same bridge the buttons use, and the shell then reads what is really there.
+ * Whatever was on the clipboard before is put back afterwards.
+ */
+async function checkClipboard(win: BrowserWindow): Promise<void> {
+  const before = await clipboard.readText();
+  const sentinel = `epc-self-test-${Date.now()}`;
+  const answer = await win.webContents.executeJavaScript(
+    `(async () => {
+       const bridge = window.desktopClipboard;
+       if (!bridge || typeof bridge.write !== 'function') return 'no clipboard bridge in the window';
+       try {
+         return (await bridge.write(${JSON.stringify(sentinel)})) ? true : 'the bridge refused';
+       } catch (error) {
+         return String((error && error.message) || error);
+       }
+     })()`,
+    true
+  );
+
+  /* The clipboard belongs to the operating system, and Windows commits a write on its own schedule:
+     asking once and believing the answer is how a check reports a failure that is only a race. */
+  const deadline = Date.now() + 4000;
+  let landed = false;
+  while (Date.now() < deadline && !landed) {
+    landed = (await clipboard.readText()) === sentinel;
+    if (!landed) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  await clipboard.writeText(before);
+  check(
+    'the window can put text on the clipboard',
+    answer === true && landed,
+    `write answered ${JSON.stringify(answer)?.slice(0, 80)}, the clipboard ${landed ? 'has the text' : 'does not have it'}`
   );
 }
 
@@ -1520,6 +1593,9 @@ async function runSelfTest(win: BrowserWindow, url: string): Promise<void> {
   // server, so taking the picture here is what makes it show the finished screen rather than the
   // instant before the footer had its last item.
   await captureScreenshot(win);
+  // One question needs the window on screen — a clipboard write — so it is asked here, after the
+  // picture of the window the app opens with, and the window is hidden again afterwards.
+  await checkClipboard(win);
   try {
     await checkDeleteFlow(win);
   } catch (error) {
@@ -1726,6 +1802,7 @@ async function main(): Promise<void> {
 
   await app.whenReady();
   installWindowControls();
+  installClipboardBridge();
   installUpdateControls();
   journal('electron is ready');
   await boot();

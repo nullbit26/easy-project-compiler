@@ -4,6 +4,7 @@ import { compilePromptApi } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import { autonomyOf } from '../utils/workingMode';
 import { journeyHeading, journeyNumber } from '../utils/journeySteps';
+import { useCopyFlash } from '../utils/copyText';
 import { Sparkles, Copy, Download, Check, Cpu, FileCode, Layers, ShieldAlert, ShieldCheck, Play, Loader2, ArrowRight, AlertTriangle, History } from 'lucide-react';
 import { ruleKindLabel } from '../utils/rulesFindingLabels';
 import { formatRulesCheckTime } from '../utils/rulesCheckStamp';
@@ -81,7 +82,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [compiledPrompt, setCompiledPrompt] = useState<CompiledPrompt | null>(null);
   const [compiledSignature, setCompiledSignature] = useState('');
-  const [copied, setCopied] = useState(false);
+  const copyFlash = useCopyFlash(2000);
   const [simulatedResult, setSimulatedResult] = useState('');
 
   /**
@@ -176,11 +177,9 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
     }
   };
 
-  const handleCopyPrompt = () => {
+  const handleCopyPrompt = async () => {
     if (!compiledPrompt) return;
-    navigator.clipboard.writeText(compiledPrompt.promptText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    await copyFlash.copy(compiledPrompt.promptText);
   };
 
   const handleDownloadPrompt = () => {
@@ -458,8 +457,20 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                   onClick={handleCopyPrompt}
                   className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
                 >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied ? t.common.copied : t.common.copy}</span>
+                  {copyFlash.state === 'copied' ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-300" />
+                  ) : copyFlash.state === 'failed' ? (
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {copyFlash.state === 'copied'
+                      ? t.common.copied
+                      : copyFlash.state === 'failed'
+                      ? t.common.copyFailed
+                      : t.common.copy}
+                  </span>
                 </button>
               </div>
             </div>

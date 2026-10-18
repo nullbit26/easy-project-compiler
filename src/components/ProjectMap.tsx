@@ -25,6 +25,7 @@ import {
 import { formatRulesCheckTime, stampFromAudit, type RulesCheckStamp } from '../utils/rulesCheckStamp';
 import { auditRulesWithFacts, readFolderFacts, type FolderFacts } from '../services/rulesCheck';
 import { ruleKindLabel } from '../utils/rulesFindingLabels';
+import { useCopyFlash } from '../utils/copyText';
 import {
   Terminal,
   FileCode,
@@ -75,7 +76,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
   const isRu = language === 'ru';
   const [selectedFile, setSelectedFile] = useState<ProjectFile | null>(project?.projectMap?.files?.[0] || null);
   const [activeRuleTab, setActiveRuleTab] = useState<'agents' | 'claude' | 'cursor'>('agents');
-  const [copiedRule, setCopiedRule] = useState(false);
+  const ruleCopy = useCopyFlash(2000);
   const [isDescribing, setIsDescribing] = useState(false);
   const [describeError, setDescribeError] = useState('');
 
@@ -284,10 +285,8 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
   // the file that is about to be created.
   const currentRuleText = rulesToWrite.find((file) => file.key === activeRuleTab)?.content ?? '';
 
-  const handleCopyRules = () => {
-    navigator.clipboard.writeText(currentRuleText);
-    setCopiedRule(true);
-    setTimeout(() => setCopiedRule(false), 2000);
+  const handleCopyRules = async () => {
+    await ruleCopy.copy(currentRuleText);
   };
 
   /* ------------------------------------------------------------------ *
@@ -662,8 +661,20 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
                   onClick={handleCopyRules}
                   className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
                 >
-                  {copiedRule ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedRule ? t.common.copied : t.map.copyRulesButton}</span>
+                  {ruleCopy.state === 'copied' ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-300" />
+                  ) : ruleCopy.state === 'failed' ? (
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {ruleCopy.state === 'copied'
+                      ? t.common.copied
+                      : ruleCopy.state === 'failed'
+                      ? t.common.copyFailed
+                      : t.map.copyRulesButton}
+                  </span>
                 </button>
 
                 <button

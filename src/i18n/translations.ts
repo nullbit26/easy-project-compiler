@@ -13,6 +13,8 @@ export interface Translations {
     close: string;
     copy: string;
     copied: string;
+    /** Shown where a button tried to copy and the window would not let it. */
+    copyFailed: string;
     export: string;
     apply: string;
     applied: string;
@@ -653,6 +655,7 @@ export const translations: Record<Language, Translations> = {
       close: 'Закрыть',
       copy: 'Копировать',
       copied: 'Скопировано',
+      copyFailed: 'Не удалось — выделите текст вручную',
       export: 'Экспорт',
       apply: 'Применить',
       applied: 'Применено',
@@ -1283,6 +1286,7 @@ export const translations: Record<Language, Translations> = {
       close: 'Close',
       copy: 'Copy',
       copied: 'Copied',
+      copyFailed: 'Could not copy — select the text by hand',
       export: 'Export',
       apply: 'Apply',
       applied: 'Applied',
