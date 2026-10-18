@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ProjectState } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { useSessionProgress } from '../services/sessionProgress';
 import { BuildBadge } from './BuildBadge';
 import { UpdateNotice } from './UpdateNotice';
 import {
@@ -55,6 +56,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { language, setLanguage, t } = useLanguage();
   /** The project a delete button was pressed for; nothing is removed until this is confirmed. */
   const [pendingDelete, setPendingDelete] = useState<ProjectState | null>(null);
+
+  /*
+   * A run of the loop is several waits long, and the screen that shows them is one tab among
+   * several. The entry that leads to it carries the sign instead: a soft pulse, the attempt being
+   * judged, and what the run is doing right now — so "the app is working on my task" is readable
+   * from anywhere in the workspace.
+   */
+  const session = useSessionProgress();
+  const sessionPhaseLabel =
+    session.phase === 'writing'
+      ? t.simple.sessionPhaseWriting
+      : session.phase === 'reviewing'
+      ? t.simple.sessionPhaseReviewing
+      : '';
 
   /*
    * Escape closes the delete confirmation wherever the focus is.
@@ -234,6 +249,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-indigo-400' : 'text-slate-400'}`} />
                         <span className="truncate">{tab.label}</span>
                       </div>
+                      {tab.id === 'simple_flow' && session.active && (
+                        <span
+                          data-session-indicator
+                          className="flex items-center gap-1.5 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0 bg-emerald-500/20 text-emerald-200 border border-emerald-500/40"
+                          title={`${t.simple.sessionRunning} • ${t.simple.attemptLabel} ${session.attempt}${
+                            sessionPhaseLabel ? ` • ${sessionPhaseLabel}` : ''
+                          }`}
+                        >
+                          {/* The dot pulses twice over: a steady one that is always there, and a
+                              ring fading out of it, which is what reads as "still working". */}
+                          <span className="relative flex w-2 h-2 items-center justify-center shrink-0">
+                            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                            <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          </span>
+                          <span data-session-attempt>{session.attempt}</span>
+                        </span>
+                      )}
                       {tab.badge && (
                         <span
                           className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider shrink-0 ${

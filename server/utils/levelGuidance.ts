@@ -156,9 +156,28 @@ export function levelWork(raw: string | undefined | null, isRu: boolean): Autono
   return { key, questions: questionRangeLabel(key), ...(isRu ? LEVEL_WORK[key].ru : LEVEL_WORK[key].en) };
 }
 
-/** The same quality demands, as a prompt block. Identical for every level. */
-export function qualityBlock(isRu: boolean): string {
-  const lines = isRu ? QUALITY_REQUIREMENTS.ru : QUALITY_REQUIREMENTS.en;
+/**
+ * What the test demand becomes when the project has no test runner at all.
+ *
+ * Asking every project for automated tests plus the command that runs them is how a beginner ends up
+ * with an agent that installs a framework nobody asked for, or with a failing check on infrastructure
+ * they never chose. The demand itself is not dropped — it is pointed at the checks that really exist.
+ */
+const NO_RUNNER_TEST_DEMAND: { ru: string; en: string } = {
+  ru: 'Проверки, которые может выполнить проект, и честный отчёт о них: тестового фреймворка в проекте нет — не добавляй его в рамках этой задачи, назови, что проверено вручную.',
+  en: 'The checks this project can actually run, and an honest report of them: the project has no test framework — do not add one for this task, and name what was checked by hand.'
+};
+
+/**
+ * The same quality demands, as a prompt block. Identical for every level.
+ *
+ * `testRunner` only decides how the test demand is worded: `false` means the project declares no
+ * test script, `null`/`true` keep the original line. A project that has a runner is asked for a test
+ * exactly as before, so nothing is weakened where tests really run.
+ */
+export function qualityBlock(isRu: boolean, testRunner: boolean | null = null): string {
+  const lines = [...(isRu ? QUALITY_REQUIREMENTS.ru : QUALITY_REQUIREMENTS.en)];
+  if (testRunner === false) lines[2] = isRu ? NO_RUNNER_TEST_DEMAND.ru : NO_RUNNER_TEST_DEMAND.en;
   return lines.map((line) => `- ${line}`).join('\n');
 }
 
@@ -167,7 +186,11 @@ export function qualityBlock(isRu: boolean): string {
  * block is appended next to it (never inside it), so it is visually impossible to "tune" quality by
  * level.
  */
-export function levelInstructionBlock(raw: string | undefined | null, isRu: boolean): string {
+export function levelInstructionBlock(
+  raw: string | undefined | null,
+  isRu: boolean,
+  testRunner: boolean | null = null
+): string {
   const work = levelWork(raw, isRu);
   if (isRu) {
     return `Уровень пользователя: "${raw || 'Beginner / Non-coder'}" (${work.key}).
@@ -177,7 +200,7 @@ export function levelInstructionBlock(raw: string | undefined | null, isRu: bool
 Уточняющих вопросов задавать не больше: ${work.questions}.
 
 Требования к качеству кода — одинаковые на всех уровнях, ослаблять их нельзя:
-${qualityBlock(isRu)}`;
+${qualityBlock(isRu, testRunner)}`;
   }
   return `User level: "${raw || 'Beginner / Non-coder'}" (${work.key}).
 Who does the work: ${work.autonomy}
@@ -186,5 +209,5 @@ Level of detail: ${work.detail}
 Clarifying questions allowed: ${work.questions} at most.
 
 Code quality requirements — identical at every level, never weaken them:
-${qualityBlock(isRu)}`;
+${qualityBlock(isRu, testRunner)}`;
 }

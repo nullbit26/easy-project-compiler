@@ -95,6 +95,38 @@ describe('Resolving the references a plan carries', () => {
     expect(plan.unresolved).toEqual([]);
   });
 
+  it('7b. accepts the short name an AI-written plan stores instead of the real id', () => {
+    /*
+     * The model names a dependency by where the task sits — phase 0, task 1 — because ids are
+     * assigned after it answers. Those names are what ends up in the saved plan, and read literally
+     * they pointed at nothing: the board greeted a perfectly well-connected plan with "dependencies
+     * that name no task in the plan: 0_0, 0_1, 1_0".
+     */
+    const plan = dependencyPlan([
+      { id: 'task_0_0', title: 'Setup', status: 'completed', dependencies: [] },
+      { id: 'task_0_1', title: 'Camera', status: 'ready', dependencies: ['0_0'] },
+      { id: 'task_1_0', title: 'Enemies', status: 'backlog', dependencies: ['0_1', 'task_1_0'] }
+    ]);
+
+    expect(plan.unresolved).toEqual([]);
+    expect(plan.edges.map((edge) => edge.id)).toEqual(['task_0_0->task_0_1', 'task_0_1->task_1_0']);
+    expect(plan.edges[0].state).toBe('ready');
+  });
+
+  it('7c. never lets a short name shadow a task that really has that id', () => {
+    const plan = dependencyPlan([
+      { id: 'task_0_0', title: 'Setup', status: 'completed', dependencies: [] },
+      { id: '0_0', title: 'Literal id', status: 'ready', dependencies: [] },
+      { id: 'task_1_0', title: 'Enemies', status: 'backlog', dependencies: ['0_0'] }
+    ]);
+
+    // The source of the line is the task whose real id is `0_0` — not `task_0_0`, which only answers
+    // to that name when nothing else claims it.
+    expect(plan.edges.map((edge) => edge.fromId)).toEqual(['0_0']);
+    expect(plan.edges.map((edge) => edge.toId)).toEqual(['task_1_0']);
+    expect(plan.unresolved).toEqual([]);
+  });
+
   it('8. reports a reference that points at nothing instead of dropping it silently', () => {
     const plan = dependencyPlan([task('a', 'ready', ['ghost'])]);
 

@@ -9,6 +9,7 @@ import sessionRoutes from './server/routes/session.routes';
 import errorRoutes from './server/routes/error.routes';
 import settingsRoutes from './server/routes/settings.routes';
 import filesRoutes from './server/routes/files.routes';
+import autonomousRoutes from './server/routes/autonomous.routes';
 import previewRoutes from './server/routes/preview.routes';
 import { getActiveProvider, getProviderStatuses, initApiKeyStore, resolveApiKey } from './server/store/apiKeyStore';
 import { getWorkspaceRoot, initWorkspaceStore } from './server/store/workspaceStore';
@@ -137,6 +138,8 @@ if (desktopRuntime) {
 app.use('/api/settings', settingsRoutes);
 // Reading and writing the user's real project folder (localhost only).
 app.use('/api/files', filesRoutes);
+// The autonomous coding loop: AI writes, formats and self-repairs, localhost only.
+app.use('/api/autonomous', autonomousRoutes);
 // Building and running the connected folder in the sandbox (localhost only).
 app.use('/api/preview', previewRoutes);
 app.use('/api/project', projectRoutes);

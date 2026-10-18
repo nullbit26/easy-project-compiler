@@ -72,6 +72,64 @@ export interface User { id: string; }
     expect(files[1].path).toBe('src/types.ts');
   });
 
+  it('takes the header closest to each fence, so a second file is not named after the first', () => {
+    /*
+     * The regression that kept config files out of the folder: the search for a Markdown header
+     * looked at the last 200 characters and took the *first* heading in them — which, for the second
+     * fence of a two-file answer, is the heading of the first file. The second block was then either
+     * misnamed or dropped by the dedupe, and the beginner pressed "write the code" and got one file
+     * out of four.
+     */
+    const output = `
+Готово. Добавил шкалу голода.
+
+### src/main.ts
+\`\`\`ts
+export function hunger(level: number): number {
+  return Math.max(0, level - 1);
+}
+\`\`\`
+
+### package.json
+\`\`\`json
+{ "name": "island", "scripts": { "build": "tsc" } }
+\`\`\`
+
+### tsconfig.json
+\`\`\`json
+{ "compilerOptions": { "strict": true } }
+\`\`\`
+`;
+
+    const files = extractFilesFromAgentOutput(output);
+
+    expect(files.map((file) => file.path)).toEqual(['src/main.ts', 'package.json', 'tsconfig.json']);
+    expect(files[1].content).toContain('"scripts"');
+  });
+
+  it('reads a file name written as a plain line, a bold line or a File: line', () => {
+    const bold = extractFilesFromAgentOutput(
+      '**jest.config.js**\n\`\`\`js\nmodule.exports = { testEnvironment: "jsdom" };\n\`\`\`\n'
+    );
+    const plain = extractFilesFromAgentOutput(
+      'File: .eslintrc.json\n\`\`\`json\n{ "extends": "eslint:recommended" }\n\`\`\`\n'
+    );
+
+    expect(bold[0].path).toBe('jest.config.js');
+    expect(plain[0].path).toBe('.eslintrc.json');
+  });
+
+  it('does not read a sentence above the fence as a file name', () => {
+    const output = `
+Вот как это можно сделать, и вот получившийся код:
+\`\`\`ts
+export const answer = 42;
+\`\`\`
+`;
+
+    expect(extractFilesFromAgentOutput(output)).toEqual([]);
+  });
+
   it('uses defaultPath fallback when code has no explicit filename', () => {
     const output = `
 \`\`\`tsx

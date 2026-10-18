@@ -12,6 +12,7 @@ import {
 import { useLanguage } from '../context/LanguageContext';
 import {
   ApplyChangesResult,
+  VerificationResponse,
   WorkspaceState,
   applyFileChangesApi,
   bindWorkspaceApi,
@@ -20,9 +21,19 @@ import {
   fetchWorkspaceApi,
   reviewSessionApi,
   scanWorkspaceApi,
-  undoFileChangesApi
+  undoFileChangesApi,
+  writeWorkspaceFileApi
 } from '../services/api';
+import {
+  finishSessionProgress,
+  setSessionPhase,
+  startSessionProgress,
+  useSessionProgress
+} from '../services/sessionProgress';
+import { toCheckEvidence } from '../utils/checkEvidence';
+import { ProjectCheckStrip } from './ProjectCheckStrip';
 import { extractFilesFromAgentOutput } from '../utils/fileExtractor';
+import { starterFileContent, suggestedStarterPath } from '../utils/starterFile';
 import { autonomyOf } from '../utils/workingMode';
 import { journeyName, journeySentence } from '../utils/journeySteps';
 import { useCopyFlash } from '../utils/copyText';
@@ -34,6 +45,7 @@ import {
   CheckCircle2,
   Copy,
   FileCode,
+  FilePlus,
   FolderOpen,
   Loader2,
   RefreshCw,
@@ -115,9 +127,25 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
   const [attempts, setAttempts] = useState<ReviewAttempt[]>([]);
   const continuationCopy = useCopyFlash(2500);
 
+  //
+  // The first file of a project that has none: the name is suggested from the stack and the reader
+  // can change it before it is created.
+  const [starterPath, setStarterPath] = useState('');
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
+  const [createdFile, setCreatedFile] = useState('');
+
   const [isWriting, setIsWriting] = useState(false);
   const [applyResult, setApplyResult] = useState<ApplyChangesResult | null>(null);
   const [isUndoing, setIsUndoing] = useState(false);
+  /*
+   * The last real check run of this folder. It is what turns the verdict from an opinion about a
+   * paste into a statement about the code on disk — and it is why `npm install` and `tsc` no longer
+   * appear in the "what still has to be done" list: the app runs them itself and hands the result
+   * to the reviewer.
+   */
+  const [checkReport, setCheckReport] = useState<VerificationResponse | null>(null);
+  const [checksRunning, setChecksRunning] = useState(false);
+  const session = useSessionProgress();
 
   const [errorText, setErrorText] = useState('');
   const [isDiagnosing, setIsDiagnosing] = useState(false);
@@ -126,10 +154,26 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
 
   const root = workspace?.root || null;
   const projectFiles = workspace?.files || [];
+  /*
+   * A project with no file at all is the one case where a prompt cannot work: the agent is asked to
+   * change code that does not exist yet, answers "send me the files", and every attempt after that
+   * reviews the same nothing. The guard only speaks once the folder has actually been read, so a
+   * slow or failed scan never blocks a project that may well have files.
+   */
+  const filesKnown = workspace !== null;
+  const noFilesYet = filesKnown && projectFiles.length === 0;
+  const starterSuggestion = useMemo(
+    () => suggestedStarterPath(project),
+    [project?.projectType, project?.engineOrFramework, project?.language]
+  );
 
   useEffect(() => {
     setAgent(project?.selectedAgent || 'DeepSeek / Web Chat');
   }, [project?.id]);
+
+  // Leaving the screen ends the run as far as the workspace is concerned: an indicator that keeps
+  // blinking after the work is over is worse than no indicator at all.
+  useEffect(() => finishSessionProgress, []);
 
   // The folder lives on the server, so the screen restores itself on every visit — and again
   // when another project is picked, because a new project may come with its own folder.
@@ -228,6 +272,39 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
     }
   };
 
+  /**
+   * Creates the one file the agent can be pointed at. The comment carries the task, so the file is
+   * a start rather than an empty accident, and the folder is re-read so the helper stops asking for
+   * a file that now exists.
+   */
+  const handleCreateStarterFile = async () => {
+    if (!root || isCreatingFile) return;
+    const value = (starterPath.trim() || starterSuggestion).replace(/^[\\/]+/, '').trim();
+    if (!value) return;
+    if (projectFiles.some((file) => file.path.toLowerCase() === value.toLowerCase())) {
+      setErrorMsg(
+        language === 'ru' ? 'Такой файл уже есть — выберите другое имя.' : 'That file already exists — pick another name.'
+      );
+      return;
+    }
+    setIsCreatingFile(true);
+    setErrorMsg('');
+    try {
+      await writeWorkspaceFileApi({ path: value, content: starterFileContent(value, taskTitle, language === 'ru') });
+      const state = await scanWorkspaceApi();
+      setWorkspace(state);
+      setStarterPath('');
+      // The confirmation is about the write, so it is set before the project map is synced: a sync
+      // problem must not read as "the file was not created".
+      setCreatedFile(value);
+      syncFilesToProject(state);
+    } catch (err: any) {
+      setErrorMsg(err?.userMessage || err?.message || (language === 'ru' ? 'Не удалось создать файл.' : 'Could not create the file.'));
+    } finally {
+      setIsCreatingFile(false);
+    }
+  };
+
   const handleRescan = async () => {
     if (isRescanning) return;
     setIsRescanning(true);
@@ -245,7 +322,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
   /* -------------------------------- step 2: task -------------------------------- */
 
   const handleCompile = async () => {
-    if (!project || !taskTitle.trim() || isCompiling) return;
+    if (!project || !taskTitle.trim() || isCompiling || noFilesYet) return;
     setIsCompiling(true);
     setErrorMsg('');
     try {
@@ -287,7 +364,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
       title: taskTitle.trim(),
       goal: taskTitle.trim(),
       status: 'ready',
-      relevantFiles: project.projectMap.files.slice(0, 2).map((file) => file.path),
+      relevantFiles: (project.projectMap?.files || []).slice(0, 2).map((file) => file.path),
       acceptanceCriteria: [
         {
           id: 'simple-ac-1',
@@ -308,11 +385,22 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
     setIsReviewing(true);
     setErrorMsg('');
     setApplyResult(null);
+    // The run is open to the rest of the workspace for as long as it takes: the sidebar says which
+    // task is being judged and how many attempts it has had.
+    startSessionProgress({
+      taskId: reviewTask.id,
+      taskTitle: reviewTask.title,
+      attempt: attempts.length + 1,
+      phase: 'reviewing'
+    });
     try {
       const result = await reviewSessionApi({
         agentOutput: answer,
         task: reviewTask,
         projectMap: project.projectMap,
+        // The commands the app ran in this folder, with their real output. The reviewer is told not
+        // to ask for them again, and a failed check cannot be reported as a finished task.
+        checkEvidence: checkReport ? toCheckEvidence(checkReport, language === 'ru') : null,
         // The attempt being judged, and the ones before it: without them the reviewer cannot tell a
         // first try from a fifth, and its own continuation prompt is written for the wrong attempt.
         stepNumber: attempts.length + 1,
@@ -349,6 +437,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
       setErrorMsg(err?.userMessage || err?.message || (language === 'ru' ? 'Не удалось проверить ответ.' : 'Could not check the answer.'));
     } finally {
       setIsReviewing(false);
+      finishSessionProgress();
     }
   };
 
@@ -356,6 +445,12 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
     if (!extractedFiles.length || isWriting) return;
     setIsWriting(true);
     setErrorMsg('');
+    startSessionProgress({
+      taskId: reviewTask?.id || null,
+      taskTitle: reviewTask?.title || taskTitle,
+      attempt: Math.max(1, attempts.length + 1),
+      phase: 'writing'
+    });
     try {
       if (onUpdateProjectFiles) onUpdateProjectFiles(extractedFiles);
       const result = await applyFileChangesApi(
@@ -366,6 +461,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
       setErrorMsg(err?.userMessage || err?.message || (language === 'ru' ? 'Не удалось записать файлы.' : 'Could not write the files.'));
     } finally {
       setIsWriting(false);
+      finishSessionProgress();
     }
   };
 
@@ -383,8 +479,42 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
     }
   };
 
+  /**
+   * What stands between the task and "done".
+   *
+   * The button used to close a task at 0%, in front of a failing build, which made both the verdict
+   * and the check strip beside it look like decoration. A task is closed by what was measured: the
+   * reviewer's verdict has to be a pass, and the folder's own checks have to pass with it. Each
+   * reason is named, because "not allowed" without a cause is just a broken button.
+   */
+  /*
+   * Only checks that actually failed (or ran out of time) block the task. The report's own `ok` is
+   * false when a check was skipped too, and a skipped check is exactly the kind that proved nothing —
+   * blocking on it would stop a task over a check nobody could run, under the wrong reason.
+   */
+  const failingChecks = (checkReport?.results || []).filter(
+    (result) => result.status === 'failed' || result.status === 'timeout'
+  );
+  const checksBlockDone = failingChecks.length > 0;
+
+  const markDoneBlockers: string[] = [];
+  if (!review) {
+    markDoneBlockers.push(s.markDoneNeedsVerdict);
+  } else if (review.progressPercent < 100 && review.status !== 'Completed') {
+    markDoneBlockers.push(s.markDoneNeedsProgress);
+  }
+  if (checksBlockDone) {
+    const names = failingChecks
+      .map((result) => (language === 'ru' ? result.labelRu : result.labelEn))
+      .filter(Boolean);
+    markDoneBlockers.push(names.length ? `${s.markDoneNeedsChecks} ${names.join(' · ')}` : s.markDoneNeedsChecksNoName);
+  }
+
   const handleMarkDone = () => {
     if (!reviewTask || !onUpdateTaskStatus) return;
+    // The button is off in this state; the action refuses it too, so a stray Enter cannot close a
+    // task the screen says is still open.
+    if (markDoneBlockers.length > 0) return;
     onUpdateTaskStatus(reviewTask.id, 'completed', review?.nextBestAction, attempts, 100);
   };
 
@@ -463,6 +593,58 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
     4: journeyName('check', t)
   };
 
+  /**
+   * Said instead of the prompt when there is nothing to put in it.
+   *
+   * The two remedials are the only two honest ones: point the project at a folder that has code,
+   * or create the single file the agent can fill on its first attempt. Both are on the card, because
+   * a warning that only explains the problem leaves the reader to invent the way out.
+   */
+  const noFilesCard = (
+    <div data-no-files className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-3">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+        <div className="space-y-1">
+          <p className="text-sm font-bold text-amber-200">{s.noFilesTitle}</p>
+          <p className="text-[11px] text-amber-100/80 leading-relaxed">{s.noFilesHint}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setStep(1)}
+          className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-bold text-xs px-3.5 py-2.5 rounded-xl transition-colors cursor-pointer inline-flex items-center gap-2"
+        >
+          <FolderOpen className="w-4 h-4" />
+          <span>{s.noFilesConnect}</span>
+        </button>
+      </div>
+
+      {root && (
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold text-amber-200">{s.noFilesCreateLabel}</label>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={starterPath}
+              onChange={(event) => setStarterPath(event.target.value)}
+              placeholder={starterSuggestion}
+              aria-label={s.noFilesCreateLabel}
+              className="flex-1 min-w-[11rem] bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-mono text-slate-100 focus:border-amber-600 placeholder:text-slate-500"
+            />
+            <button
+              onClick={handleCreateStarterFile}
+              disabled={isCreatingFile}
+              className="bg-amber-700 enabled:hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs px-3.5 py-2.5 rounded-xl transition-colors enabled:cursor-pointer inline-flex items-center gap-2"
+            >
+              {isCreatingFile ? <Loader2 className="w-4 h-4 animate-spin" /> : <FilePlus className="w-4 h-4" />}
+              <span>{isCreatingFile ? s.noFilesCreating : s.noFilesCreate}</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const verdict = review
     ? review.progressPercent >= 100 || review.status === 'Completed'
       ? { label: s.verdictReady, emoji: '✅', tone: 'emerald' as const }
@@ -512,6 +694,33 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
           })}
         </div>
       </div>
+
+      {/*
+        The run, said out loud.
+
+        The sidebar carries a quiet version of this (a pulsing dot and the attempt number on the
+        entry that leads here), but a reader who is on this screen wants the sentence: which task,
+        which attempt, and what the app is doing with it right now. It appears while the answer is
+        being judged and disappears the moment the verdict does.
+      */}
+      {session.active && (
+        <div
+          data-session-banner
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3.5 py-2.5 text-[11px] text-emerald-200"
+        >
+          <span className="relative flex w-2 h-2 items-center justify-center shrink-0">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+            <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          </span>
+          <span className="font-bold">{s.sessionRunning}</span>
+          <span className="text-emerald-300/80">
+            • {s.attemptLabel} {session.attempt}
+          </span>
+          {session.phase === 'writing' && <span className="text-emerald-300/80">• {s.sessionPhaseWriting}</span>}
+          {session.phase === 'reviewing' && <span className="text-emerald-300/80">• {s.sessionPhaseReviewing}</span>}
+          {session.taskTitle && <span className="text-emerald-200/70 truncate">• {session.taskTitle}</span>}
+        </div>
+      )}
 
       {errorMsg && (
         <div className="bg-rose-500/10 rounded-xl px-4 py-3 text-xs text-rose-200 flex items-start gap-2">
@@ -629,6 +838,16 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             <p className="text-xs text-slate-400 mt-1">{s.taskHelp}</p>
           </div>
 
+          {/* No prompt can be written for a folder with no files in it, so the blocker is said
+              before the task is picked rather than after the button refuses to work. */}
+          {noFilesYet
+            ? noFilesCard
+            : createdFile && (
+                <p data-file-created className="text-[11px] text-emerald-300">
+                  {s.noFilesCreated} <span className="font-mono text-emerald-200">{createdFile}</span>
+                </p>
+              )}
+
           {tasks.length > 0 && (
             <div className="space-y-2">
               {tasks.slice(0, 8).map((task) => {
@@ -695,7 +914,8 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             </button>
             <button
               onClick={handleCompile}
-              disabled={!taskTitle.trim() || isCompiling}
+              disabled={!taskTitle.trim() || isCompiling || noFilesYet}
+              title={noFilesYet ? s.noFilesTitle : undefined}
               className="bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
             >
               {isCompiling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
@@ -713,16 +933,23 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             <p className="text-xs text-slate-400 mt-1">{s.promptHelp}</p>
           </div>
 
-          <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 max-h-80 overflow-auto">
-            <pre className="text-[11px] font-mono text-slate-200 whitespace-pre-wrap leading-relaxed">
-              {compiled?.promptText || ''}
-            </pre>
-          </div>
+          {/* The same blocker as step 2: a prompt shown over an empty folder would still be a
+              prompt the agent cannot act on, so the screen says that instead of offering a copy. */}
+          {noFilesYet ? (
+            noFilesCard
+          ) : (
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 max-h-80 overflow-auto">
+              <pre className="text-[11px] font-mono text-slate-200 whitespace-pre-wrap leading-relaxed">
+                {compiled?.promptText || ''}
+              </pre>
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleCopyPrompt}
-              className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
+              disabled={!compiled || noFilesYet}
+              className="bg-emerald-700 enabled:hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
             >
               {promptCopy.state === 'copied' ? (
                 <Check className="w-4 h-4" />
@@ -744,7 +971,8 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             </button>
             <button
               onClick={() => goToStep(4)}
-              className="ml-auto bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
+              disabled={noFilesYet}
+              className="ml-auto bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
             >
               <span>{s.readyButton}</span>
               <ArrowRight className="w-4 h-4" />
@@ -782,7 +1010,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
               </div>
             )}
 
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <button
                 onClick={() => setStep(3)}
                 className="text-xs font-bold text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
@@ -790,16 +1018,51 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>{s.back}</span>
               </button>
-              <button
-                onClick={handleReview}
-                disabled={!answer.trim() || isReviewing}
-                className="bg-emerald-700 enabled:hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
-              >
-                {isReviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                <span>{isReviewing ? s.checking : s.checkButton}</span>
-              </button>
+              {/*
+               * The code goes on disk before it is judged, not after. The write used to live only
+               * inside the verdict card, so the plain order of this screen was "paste, judge, then
+               * write" — and the reviewer had nothing measured to judge against.
+               */}
+              <div className="flex flex-wrap items-center gap-2 ml-auto">
+                {extractedFiles.length > 0 && (
+                  <button
+                    onClick={handleWriteFiles}
+                    disabled={isWriting}
+                    data-write-files
+                    className="bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-50 text-slate-100 border border-slate-700 font-bold text-sm px-4 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
+                  >
+                    {isWriting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    <span>{s.writeFiles}</span>
+                  </button>
+                )}
+                <button
+                  onClick={handleReview}
+                  disabled={!answer.trim() || isReviewing}
+                  className="bg-emerald-700 enabled:hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
+                >
+                  {isReviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  <span>{isReviewing ? s.checking : s.checkButton}</span>
+                </button>
+              </div>
             </div>
+
+            {/* Honest about the one thing that can make a verdict thinner: a check run that has
+                not answered yet, so the reviewer has no measured facts to judge with. */}
+            {checksRunning && !isReviewing && (
+              <p data-checks-pending className="text-[11px] text-indigo-300">
+                {language === 'ru'
+                  ? 'Проверки проекта ещё идут: ответ можно проверить и сейчас, но вывод будет без их результатов.'
+                  : 'The project checks are still running: you can review the answer now, but the verdict will not include them.'}
+              </p>
+            )}
           </div>
+
+          <ProjectCheckStrip
+            root={root}
+            autoRunKey={applyResult?.backupId ?? null}
+            onReport={setCheckReport}
+            onRunningChange={setChecksRunning}
+          />
 
           {review && verdict && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
@@ -884,22 +1147,23 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
               )}
 
               <div className="flex flex-wrap items-center gap-2">
-                {extractedFiles.length > 0 && (
-                  <button
-                    onClick={handleWriteFiles}
-                    disabled={isWriting}
-                    className="bg-emerald-700 enabled:hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
-                  >
-                    {isWriting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    <span>{s.writeFiles}</span>
-                  </button>
-                )}
+                {/*
+                 * No second "write the code" button here.
+                 *
+                 * It used to live only in this card, which read as "judge first, write later" — and
+                 * the reviewer had nothing on disk to judge against. The write now happens in the
+                 * card above, before the check, and this one stays the place that reports what was
+                 * written and takes it back.
+                 */}
                 {reviewTask && onUpdateTaskStatus && (
                   <button
                     onClick={handleMarkDone}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-bold text-sm px-4 py-3 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
+                    disabled={markDoneBlockers.length > 0}
+                    data-mark-done
+                    title={markDoneBlockers.length > 0 ? s.markDoneBlocked : undefined}
+                    className="bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-40 text-slate-100 border border-slate-700 font-bold text-sm px-4 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
                   >
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <CheckCircle2 className={`w-4 h-4 ${markDoneBlockers.length > 0 ? 'text-slate-400' : 'text-emerald-400'}`} />
                     <span>{s.markDone}</span>
                   </button>
                 )}
@@ -918,6 +1182,25 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                   <span>{s.restartPrompt}</span>
                 </button>
               </div>
+
+              {reviewTask && onUpdateTaskStatus && markDoneBlockers.length > 0 && (
+                <div
+                  data-mark-done-blocked
+                  className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-1"
+                >
+                  <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider">
+                    {s.markDoneBlocked}
+                  </span>
+                  <ul className="text-[11px] text-amber-100/80 space-y-1">
+                    {markDoneBlockers.map((reason) => (
+                      <li key={reason} className="flex gap-1.5">
+                        <span>•</span>
+                        <span>{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {applyResult && (
                 <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2">

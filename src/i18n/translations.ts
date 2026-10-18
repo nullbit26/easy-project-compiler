@@ -107,6 +107,13 @@ export interface Translations {
     taskHelp: string;
     otherTask: string;
     otherTaskPlaceholder: string;
+    noFilesTitle: string;
+    noFilesHint: string;
+    noFilesConnect: string;
+    noFilesCreateLabel: string;
+    noFilesCreate: string;
+    noFilesCreating: string;
+    noFilesCreated: string;
     compileButton: string;
     promptTitle: string;
     promptHelp: string;
@@ -128,6 +135,21 @@ export interface Translations {
     undoWrite: string;
     undone: string;
     markDone: string;
+    markDoneBlocked: string;
+    markDoneNeedsVerdict: string;
+    markDoneNeedsProgress: string;
+    markDoneNeedsChecks: string;
+    markDoneNeedsChecksNoName: string;
+    checksTitle: string;
+    checksRun: string;
+    checksAgain: string;
+    checksRunning: string;
+    checksRunningHint: string;
+    checksLoading: string;
+    checksNothing: string;
+    sessionRunning: string;
+    sessionPhaseWriting: string;
+    sessionPhaseReviewing: string;
     missingTitle: string;
     nextActionTitle: string;
     continuationTitle: string;
@@ -213,6 +235,8 @@ export interface Translations {
     tasksFinished: string;
     nextAction: string;
     compilePromptNow: string;
+    reviewAnswer: string;
+    openPlan: string;
     metricsCompleted: string;
     metricsCompletedSub: string;
     metricsInProgress: string;
@@ -345,6 +369,17 @@ export interface Translations {
     addTaskButton: string;
     adaptPlanButton: string;
     compilePrompt: string;
+    /** The short word on the card's own button; the full name is its tooltip. */
+    compileShort: string;
+    /** The card-menu action: launch the autonomous code loop for this task. */
+    autoCodeButton: string;
+    autoCodeAllButton: string;
+    autoCodeRunning: string;
+    autoCodeFailedNotice: string;
+    autoCodeCompletedNotice: string;
+    autoCodeNoAiKey: string;
+    autoCodeRunInProgress: string;
+    statusLabel: string;
     tasksCount: string;
     addTaskModalTitle: string;
     taskTitleLabel: string;
@@ -362,7 +397,8 @@ export interface Translations {
     zoomOut: string;
     resetZoom: string;
     fitView: string;
-    minimapTitle: string;
+    minimapShow: string;
+    minimapHide: string;
     minimapHint: string;
     laneReady: string;
     laneActive: string;
@@ -770,6 +806,14 @@ export const translations: Record<Language, Translations> = {
       taskHelp: 'Выберите задачу из плана или напишите её своими словами.',
       otherTask: 'Или напишите своими словами',
       otherTaskPlaceholder: 'Например: добавить кнопку «Сохранить» на главный экран',
+      noFilesTitle: 'Пока нечего менять',
+      noFilesHint:
+        'В папке проекта нет ни одного файла, поэтому агенту нечего менять: он ответит «пришлите файлы проекта», и проверять будет нечего. Подключите папку с кодом или создайте файл, в который он сможет писать.',
+      noFilesConnect: 'Подключить папку',
+      noFilesCreateLabel: 'Или создайте файл, в который агент будет писать:',
+      noFilesCreate: 'Создать файл',
+      noFilesCreating: 'Создаём…',
+      noFilesCreated: 'Файл создан — промпт можно собирать.',
       compileButton: 'Собрать промпт',
       promptTitle: 'Промпт для ИИ готов',
       promptHelp: 'Скопируйте промпт и вставьте его в ИИ-агента. Потом вернитесь сюда с его ответом.',
@@ -791,6 +835,23 @@ export const translations: Record<Language, Translations> = {
       undoWrite: 'Отменить запись',
       undone: 'Изменения отменены',
       markDone: 'Отметить задачу выполненной',
+      markDoneBlocked: 'Отметить выполненной пока нельзя',
+      markDoneNeedsVerdict: 'Сначала нажмите «Проверить ответ»: задача закрывается по вердикту, а не по кнопке.',
+      markDoneNeedsProgress:
+        'Агент сделал не всё: готовность ниже 100%. Доделайте то, что осталось в списке выше.',
+      markDoneNeedsChecks: 'Проверки проекта не проходят:',
+      markDoneNeedsChecksNoName: 'Проверки проекта не проходят.',
+      checksTitle: 'Проверки проекта',
+      checksRun: 'Проверить проект',
+      checksAgain: 'Проверить снова',
+      checksRunning: 'Идёт проверка…',
+      checksRunningHint: 'Команды папки выполняются на вашем компьютере. Можно продолжать: результат появится здесь.',
+      checksLoading: 'Смотрим, что можно проверить в этой папке…',
+      checksNothing:
+        'В этой папке пока нечего проверять автоматически: приложение запускает команды из package.json (проверка типов, тесты, сборка), а их тут нет. Запишите код — он всё равно попадёт в файлы.',
+      sessionRunning: 'Сессия идёт',
+      sessionPhaseWriting: 'записываю файлы',
+      sessionPhaseReviewing: 'ИИ проверяет ответ',
       missingTitle: 'Что ещё нужно сделать:',
       nextActionTitle: 'Что дальше:',
       continuationTitle: 'Промпт для следующей попытки',
@@ -848,6 +909,8 @@ export const translations: Record<Language, Translations> = {
       tasksFinished: 'задач завершено из',
       nextAction: 'Рекомендуемое действие:',
       compilePromptNow: 'Скомпилировать промпт',
+      reviewAnswer: 'Проверить ответ',
+      openPlan: 'Открыть план',
       metricsCompleted: 'Завершенные задачи',
       metricsCompletedSub: 'Приняты без замечаний',
       metricsInProgress: 'В работе / На проверке',
@@ -978,6 +1041,15 @@ export const translations: Record<Language, Translations> = {
       addTaskButton: 'Добавить задачу',
       adaptPlanButton: 'Адаптировать план с ИИ',
       compilePrompt: 'Компилировать промпт',
+      compileShort: 'Промпт',
+      autoCodeButton: 'Автокодинг: сделать самому',
+      autoCodeAllButton: 'Автокодинг всего плана: задачи по очереди',
+      autoCodeRunning: 'ИИ пишет код сам',
+      autoCodeFailedNotice: 'Проверки не прошли — последняя запись откатить не удалась, откатите в разделе файлов.',
+      autoCodeCompletedNotice: 'Готово: код записан, проверки прошли.',
+      autoCodeNoAiKey: 'Сначала настройте ключ AI-провайдера.',
+      autoCodeRunInProgress: 'Автокодинг уже занят одной задачей.',
+      statusLabel: 'Статус задачи',
       tasksCount: 'задач',
       addTaskModalTitle: 'Новая задача',
       taskTitleLabel: 'Название задачи',
@@ -995,7 +1067,8 @@ export const translations: Record<Language, Translations> = {
       zoomOut: 'Отдалить',
       resetZoom: 'Сбросить масштаб',
       fitView: 'Показать весь план',
-      minimapTitle: 'Обзор холста',
+      minimapShow: 'Развернуть обзор',
+      minimapHide: 'Свернуть обзор',
       minimapHint: 'Нажмите на обзор, чтобы перейти к этому месту.',
       laneReady: 'Готово к работе',
       laneActive: 'В работе и на проверке',
@@ -1399,6 +1472,14 @@ export const translations: Record<Language, Translations> = {
       taskHelp: 'Pick a task from the plan or describe it in your own words.',
       otherTask: 'Or describe it in your own words',
       otherTaskPlaceholder: 'For example: add a Save button to the main screen',
+      noFilesTitle: 'Nothing to change yet',
+      noFilesHint:
+        'There is not a single file in the project folder, so the agent has nothing to change: it will answer "send me the project files", and there will be nothing to check. Connect a folder with code or create a file it can write into.',
+      noFilesConnect: 'Connect a folder',
+      noFilesCreateLabel: 'Or create the file the agent will write into:',
+      noFilesCreate: 'Create the file',
+      noFilesCreating: 'Creating…',
+      noFilesCreated: 'The file is created — the prompt can be built again.',
       compileButton: 'Build the prompt',
       promptTitle: 'The AI prompt is ready',
       promptHelp: 'Copy the prompt into your AI agent, then come back here with its answer.',
@@ -1420,6 +1501,24 @@ export const translations: Record<Language, Translations> = {
       undoWrite: 'Undo the write',
       undone: 'Changes undone',
       markDone: 'Mark the task as done',
+      markDoneBlocked: 'It cannot be marked as done yet',
+      markDoneNeedsVerdict: 'Check the answer first: a task is closed by the verdict, not by the button.',
+      markDoneNeedsProgress:
+        'The agent did not finish: task progress is below 100%. Do what is still missing in the list above.',
+      markDoneNeedsChecks: 'The project checks do not pass:',
+      markDoneNeedsChecksNoName: 'The project checks do not pass.',
+      checksTitle: 'Project checks',
+      checksRun: 'Check the project',
+      checksAgain: 'Check again',
+      checksRunning: 'Checks are running…',
+      checksRunningHint:
+        'The folder’s own commands run on your computer. Keep going — the result appears here.',
+      checksLoading: 'Looking at what this folder can check…',
+      checksNothing:
+        'There is nothing to check automatically in this folder yet: the app runs the commands from package.json (type check, tests, build), and there are none here. Write the code anyway — it still lands in the files.',
+      sessionRunning: 'Session running',
+      sessionPhaseWriting: 'writing the files',
+      sessionPhaseReviewing: 'the AI is reviewing the answer',
       missingTitle: 'What is still missing:',
       nextActionTitle: 'What to do next:',
       continuationTitle: 'Prompt for the next attempt',
@@ -1477,6 +1576,8 @@ export const translations: Record<Language, Translations> = {
       tasksFinished: 'tasks completed of',
       nextAction: 'Next Recommended Action:',
       compilePromptNow: 'Compile Prompt Now',
+      reviewAnswer: 'Check the answer',
+      openPlan: 'Open the plan',
       metricsCompleted: 'Completed Tasks',
       metricsCompletedSub: 'Accepted without issues',
       metricsInProgress: 'In-Progress / Review',
@@ -1607,6 +1708,15 @@ export const translations: Record<Language, Translations> = {
       addTaskButton: 'Add Task',
       adaptPlanButton: 'Adapt Plan with AI',
       compilePrompt: 'Compile Prompt',
+      compileShort: 'Prompt',
+      autoCodeButton: 'Auto-code: do it yourself',
+      autoCodeAllButton: 'Auto-code the whole plan: tasks one after another',
+      autoCodeRunning: 'AI is coding on its own',
+      autoCodeFailedNotice: 'The checks failed — the last write could not be rolled back automatically; undo it in the files section.',
+      autoCodeCompletedNotice: 'Done: the code is written and every check passed.',
+      autoCodeNoAiKey: 'Configure an AI provider key first.',
+      autoCodeRunInProgress: 'Auto-code is already working on one task.',
+      statusLabel: 'Task status',
       tasksCount: 'tasks',
       addTaskModalTitle: 'New Task',
       taskTitleLabel: 'Task Title',
@@ -1624,7 +1734,8 @@ export const translations: Record<Language, Translations> = {
       zoomOut: 'Zoom out',
       resetZoom: 'Reset zoom',
       fitView: 'Fit the whole plan',
-      minimapTitle: 'Board overview',
+      minimapShow: 'Expand the overview',
+      minimapHide: 'Collapse the overview',
       minimapHint: 'Click the overview to jump to that spot.',
       laneReady: 'Ready',
       laneActive: 'In progress & review',

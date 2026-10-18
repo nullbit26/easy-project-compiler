@@ -10,6 +10,7 @@ import {
   type RulesCheckOutcome
 } from '../utils/rulesStaleness';
 import { buildCompilePromptText, ensureCompiledSections } from '../utils/promptTexts';
+import { hasTestRunner, localAcceptance } from '../utils/localAcceptance';
 import { agentProfileFor, referenceFor, rulesFileLine, surfaceDescription } from '../../src/utils/agentProfiles';
 
 const compilePromptSchema = {
@@ -99,7 +100,9 @@ export async function compilePrompt(req: Request, res: Response) {
      * same folder read the rules check uses; with no rules to check, the folder is read for this
      * alone.
      */
-    const declaredCommands = (rulesCheck ? rulesCheck.facts.scripts : folderFactsForRules().scripts) || null;
+    const folderFacts = rulesCheck ? rulesCheck.facts : folderFactsForRules();
+    const declaredCommands = folderFacts.scripts || null;
+    const testRunner = hasTestRunner(declaredCommands);
 
     if (ai) {
       /*
@@ -122,7 +125,8 @@ export async function compilePrompt(req: Request, res: Response) {
         briefTagline,
         files: projectMap?.files || [],
         rulesSection,
-        verificationCommands: declaredCommands
+        verificationCommands: declaredCommands,
+        testRunner
       });
       const parsed = await callAiJson(prompt, compilePromptSchema);
       if (parsed && parsed.promptText) {
@@ -258,8 +262,8 @@ You are acting as a senior developer inside a web chat (${isDeepSeek ? 'DeepSeek
       ? `## Кто делает работу\n${work.autonomy}\n\n## Как объяснять результат\n${work.explanation}\n${work.detail}`
       : `## Who does the work\n${work.autonomy}\n\n## How to explain the result\n${work.explanation}\n${work.detail}`;
     const qualitySection = isRu
-      ? `## Требования к качеству кода (одинаковые для всех уровней)\n${qualityBlock(true)}`
-      : `## Code quality requirements (identical at every level)\n${qualityBlock(false)}`;
+      ? `## Требования к качеству кода (одинаковые для всех уровней)\n${qualityBlock(true, testRunner)}`
+      : `## Code quality requirements (identical at every level)\n${qualityBlock(false, testRunner)}`;
 
     // The check comes before the task on purpose: what the agent must not do is read before what it
     // is asked to do.
@@ -285,6 +289,23 @@ You are acting as a senior developer inside a web chat (${isDeepSeek ? 'DeepSeek
         ? 'Одно изменение за раз, с явными границами: перечисли, что должно остаться нетронутым.'
         : 'One change at a time, with explicit boundaries: say what must be left untouched.'
     }[profile.surface];
+    /*
+     * The criteria and the checks of a prompt written without a model.
+     *
+     * They used to be three fixed sentences under every task in every project, and `tests` said
+     * "Запустить проверку измененных модулей" — a description, not a command. A beginner had no way
+     * to tell such a prompt from a compiled one. Everything here comes from the task title, the real
+     * file list and the real script names; what is unknown is said to be unknown.
+     */
+    const acceptance = localAcceptance({
+      isRu,
+      taskTitle: taskTitle || userRequest,
+      files: relFiles.map((f: any) => String(f.path)),
+      commands: declaredCommands,
+      folderConnected: folderFacts.connected
+    });
+    const criteriaLines = acceptance.criteria.map((line) => `- ${line}`).join('\n');
+
     const returnFormat = {
       chat: isRu
         ? 'Полный, готовый к копированию код для измененных и созданных файлов.'
@@ -320,9 +341,7 @@ ${levelSection}
 ${qualitySection}
 
 ## Критерии приемки
-- Код собирается без синтаксических ошибок и ошибок типизации.
-- Запрошенный функционал работает корректно.
-- Отсутствуют неразрешенные импорты.
+${criteriaLines}
 
 ## Формат вывода
 1. Краткий обзор внесенных изменений.
@@ -350,9 +369,7 @@ ${levelSection}
 ${qualitySection}
 
 ## Acceptance Criteria
-- Code compiles without syntax or type errors.
-- Requested functionality works as expected.
-- No missing imports or syntax errors.
+${criteriaLines}
 
 ## Output Requested
 1. Brief overview of changes.
@@ -363,20 +380,18 @@ ${qualitySection}
       success: true,
       data: {
         taskTitle: taskTitle || userRequest,
-        confidence: 88,
+        /*
+         * Built from facts, not fixed. A prompt written without a model is still a promise about a
+         * real folder, so its confidence has to fall when the folder tells it less.
+         */
+        confidence: acceptance.confidence,
         includedFiles: relFiles,
         excludedFiles: excludedList,
         missingContext: [],
-        architectureWarnings: [
-          contextMode === 'Minimal'
-            ? (isRu ? 'Сохраняйте изменения строго локальными; не изменяйте внешние файлы.' : 'Keep diff strictly localized to minimal changes; touch zero external files.')
-            : (isRu ? 'Сохраняйте существующие хуки событий и избегайте дублирующих синглтонов.' : 'Maintain existing event hooks and do not introduce duplicate singletons')
-        ],
+        architectureWarnings: acceptance.warnings,
         promptText,
-        acceptanceCriteria: isRu
-          ? ['Код компилируется без ошибок', 'Функционал соответствует запрошенному', 'Отсутствуют ошибки импорта']
-          : ['Code compiles without errors', 'Feature meets requested behavior', 'No missing imports or syntax errors'],
-        tests: isRu ? ['Запустить проверку измененных модулей'] : ['Run verification test for modified modules'],
+        acceptanceCriteria: acceptance.criteria,
+        tests: acceptance.tests,
         estimatedTokens: estimatedTokens,
         nextBestAction: isRu
           ? `Скопируйте этот скомпилированный промпт в ${profile.name} и выполните.`
@@ -384,7 +399,12 @@ ${qualitySection}
         securityWarnings: isRu ? ['Никогда не публикуйте секретные API-ключи'] : ['Never commit raw API keys'],
         // The same check the prompt was built on, so the screen can show what the agent was told.
         rulesCheck
-      }
+      },
+      /*
+       * Which engine wrote this prompt. Without it the screen cannot tell a model's prompt from this
+       * one, and the fallback is exactly what runs when the provider is slow or out of key.
+       */
+      engine: 'local'
     });
   } catch (err: any) {
     console.error('Error in /api/prompt/compile:', err);

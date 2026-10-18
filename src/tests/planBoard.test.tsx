@@ -237,19 +237,40 @@ describe('Dragging a card on the board', () => {
 });
 
 describe('The real controls stay usable on the board', () => {
-  it('9. changes a status from the card’s own dropdown', () => {
+  it('9. changes a status from the card’s own menu', () => {
     const { onUpdateTaskStatus } = renderBoard(twoPhaseProject());
 
-    const select = within(screen.getByTestId('plan-card-a')).getByRole('combobox');
-    fireEvent.change(select, { target: { value: 'completed' } });
+    fireEvent.click(within(screen.getByTestId('plan-card-a')).getByTestId('task-status-trigger'));
+    // The list is this app's own, not an operating-system popup: it names every state in the
+    // reader's language and marks the one the task is in.
+    const menu = screen.getByTestId('task-status-menu');
+    expect(within(menu).getByRole('menuitemradio', { name: 'Готово' })).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.click(within(menu).getByRole('menuitemradio', { name: 'Завершено' }));
 
     expect(onUpdateTaskStatus).toHaveBeenCalledWith('a', 'completed');
+    expect(screen.queryByTestId('task-status-menu')).toBeNull();
+  });
+
+  it('9b. shows the state the loop set, which the old select could not even display', () => {
+    const project = twoPhaseProject();
+    project.phases[0].tasks[0].status = 'partial';
+    renderBoard(project);
+
+    const card = screen.getByTestId('plan-card-a');
+    expect(within(card).getByTestId('task-status-trigger')).toHaveTextContent('Частично');
+
+    fireEvent.click(within(card).getByTestId('task-status-trigger'));
+    expect(screen.getByTestId('task-status-menu')).toBeInTheDocument();
+    // Escape closes it without changing anything.
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('task-status-menu')).toBeNull();
   });
 
   it('10. sends a task to the prompt compiler from the card', () => {
     const { onCompileTaskPrompt } = renderBoard(twoPhaseProject());
 
-    fireEvent.click(within(screen.getByTestId('plan-card-b')).getByText('Компилировать промпт'));
+    fireEvent.click(within(screen.getByTestId('plan-card-b')).getByTestId('plan-compile-b'));
 
     expect(onCompileTaskPrompt).toHaveBeenCalledWith('Task b');
   });
@@ -257,7 +278,7 @@ describe('The real controls stay usable on the board', () => {
   it('11. leaves the plan screen for the columns when asked', () => {
     const { onSwitchToKanban } = renderBoard(twoPhaseProject());
 
-    fireEvent.click(screen.getByText('Канбан'));
+    fireEvent.click(screen.getByRole('button', { name: 'Канбан' }));
 
     expect(onSwitchToKanban).toHaveBeenCalledTimes(1);
   });
@@ -282,7 +303,8 @@ describe('Moving the board itself', () => {
     project.phases[0].tasks[0].canvasPosition = { x: 9000, y: 9000 };
     const { onUpdateTaskPositions } = renderBoard(project);
 
-    fireEvent.click(screen.getByText('Разложить по дорожкам'));
+    // The toolbar is icon-only, so the button is found by the name its tooltip carries.
+    fireEvent.click(screen.getByRole('button', { name: 'Разложить по дорожкам' }));
 
     const arrangement = onUpdateTaskPositions.mock.calls[0][0];
     expect(Object.keys(arrangement).sort()).toEqual(['a', 'b', 'c', 'd']);
@@ -316,7 +338,7 @@ describe('Moving the board itself', () => {
     expect(drawn.ready.x).toBe(420);
     expect(drawn.ready.y).toBe(-160);
 
-    fireEvent.click(screen.getByText('Разложить по дорожкам'));
+    fireEvent.click(screen.getByRole('button', { name: 'Разложить по дорожкам' }));
 
     const arrangement = onUpdateTaskPositions.mock.calls[0][0];
     for (const [id, key] of Object.entries(zoneOf)) {
@@ -363,6 +385,33 @@ describe('Moving the board itself', () => {
     fireEvent.pointerDown(screen.getByTestId('canvas-minimap'), { pointerId: 9, clientX: 20, clientY: 20 });
 
     expect(world.style.transform).not.toBe(before);
+  });
+
+  it('15b. folds the overview away to one short button, and keeps the board usable', () => {
+    renderBoard(twoPhaseProject());
+
+    const map = screen.getByTestId('canvas-minimap');
+    const toggle = screen.getByTestId('canvas-minimap-toggle');
+    // Open by default: the map is the only place that says where the viewport sits on the plan.
+    expect(map.style.display).toBe('block');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(toggle);
+
+    expect(screen.getByTestId('canvas-minimap').style.display).toBe('none');
+    // The button changes its own words, so the way back is the thing that is on screen.
+    expect(screen.getByTestId('canvas-minimap-toggle')).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'Развернуть обзор' })).toBeInTheDocument();
+  });
+
+  it('15c. offers the board controls as icons with their names in the tooltip', () => {
+    renderBoard(twoPhaseProject());
+
+    // No label text anywhere in the row: every control is an icon with an accessible name.
+    expect(screen.getByRole('button', { name: 'Разложить по дорожкам' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Добавить задачу' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Канбан' })).toBeInTheDocument();
+    expect(screen.queryByText('Разложить по дорожкам')).toBeNull();
   });
 });
 
@@ -415,8 +464,10 @@ describe('Dependency lines on the board', () => {
 
     // `c` waits for one unfinished task; `b` waits for nothing.
     expect(within(waitingCard).getByText('ждёт 1')).toBeTruthy();
-    expect(within(readyCard).getByText('можно начинать')).toBeTruthy();
     expect(within(readyCard).queryByText(/^ждёт/)).toBeNull();
+    // Nothing is said about a task that can simply be picked up: on a plan that runs in order, every
+    // card but one is ready, so a badge for it was eleven badges of "this is fine" on one board.
+    expect(within(readyCard).queryByText('можно начинать')).toBeNull();
   });
 
   it('20. tells the truth about a dependency that points at nothing', () => {
@@ -509,9 +560,9 @@ describe('What a card keeps at every zoom', () => {
     const { onCompileTaskPrompt } = renderBoard(twoPhaseProject());
     const card = () => screen.getByTestId('plan-card-a');
 
-    // At 1:1 the button says what it does.
+    // At 1:1 the button says what it does — the short word, with the full name in the tooltip.
     fireEvent.click(screen.getByTestId('canvas-zoom-readout'));
-    expect(within(within(card()).getByTestId('plan-compile-a')).getByText('Компилировать промпт')).toBeTruthy();
+    expect(within(within(card()).getByTestId('plan-compile-a')).getByText('Промпт')).toBeTruthy();
 
     /*
      * The button the screen exists for used to disappear below 60% — which is where "fit the plan"
@@ -525,10 +576,13 @@ describe('What a card keeps at every zoom', () => {
 
     expect(card().getAttribute('data-compact')).toBe('true');
     const button = within(card()).getByTestId('plan-compile-a');
-    expect(within(button).queryByText('Компилировать промпт')).toBeNull();
+    expect(within(button).queryByText('Промпт')).toBeNull();
     expect(button.getAttribute('aria-label')).toBe('Компилировать промпт');
 
-    expect(within(card()).getByRole('combobox')).toBeTruthy();
+    // The state control is an icon at this zoom too, and it still opens its list.
+    fireEvent.click(within(card()).getByTestId('task-status-trigger'));
+    expect(screen.getByTestId('task-status-menu')).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
     expect(within(card()).getByText('Goal of a')).toBeTruthy();
 
     fireEvent.click(button);
@@ -628,7 +682,7 @@ describe('Grabbing a card where the user actually grabs it', () => {
   it('30. leaves a press that lands on a control to that control', () => {
     const { onUpdateTaskPositions, onCompileTaskPrompt } = renderBoard(twoPhaseProject());
 
-    const button = within(screen.getByTestId('plan-card-a')).getByText('Компилировать промпт');
+    const button = within(screen.getByTestId('plan-card-a')).getByTestId('plan-compile-a');
     fireEvent.pointerDown(button, { pointerId: 41, button: 0, clientX: 100, clientY: 100 });
     fireEvent.pointerMove(window, { pointerId: 41, clientX: 220, clientY: 220 });
     fireEvent.pointerUp(window, { pointerId: 41, clientX: 220, clientY: 220 });

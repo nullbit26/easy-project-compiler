@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Bot,
+  ChevronDown,
+  ChevronUp,
   Columns3,
   GripVertical,
   Layers,
   Link2,
-  Map as MapIcon,
+  ListStart,
   Maximize2,
   Minus,
   Plus,
@@ -46,7 +48,9 @@ import {
   zoomAtPoint
 } from '../utils/canvasView';
 import { PlanTaskDialogs } from './PlanTaskDialogs';
+import { STATUS_DOT, TaskStatusMenu } from './TaskStatusMenu';
 import { PlanContextMenu, type PlanMenuTarget } from './PlanContextMenu';
+import { AutopilotPlate } from './AutopilotPlate';
 import { laneColorOf, laneSkinOf } from '../utils/laneSkin';
 import {
   dependencyGraph,
@@ -114,15 +118,8 @@ const LINK_SKIN: Record<EdgeState, { color: string; width: number; dash?: string
   done: { color: '#334155', width: 1.5, opacity: 0.75 }
 };
 
-const STATUS_DOT: Record<string, string> = {
-  ready: 'bg-slate-400',
-  backlog: 'bg-slate-500',
-  in_progress: 'bg-indigo-400',
-  partial: 'bg-indigo-300',
-  review: 'bg-purple-400',
-  blocked: 'bg-amber-400',
-  completed: 'bg-emerald-400'
-};
+/* The state dots live with the status menu, which is the control they belong to; the card header
+   reads them from there so one colour means one state everywhere. */
 
 interface PlanCanvasProps {
   project: ProjectState | null;
@@ -140,8 +137,12 @@ interface PlanCanvasProps {
     positions?: Record<string, { x: number; y: number }>
   ) => void;
   onCompileTaskPrompt: (taskTitle: string) => void;
+  /** Optional: announced when the autonomous loop takes a task, so the app can react beyond the board. */
+  onAddAutoCode?: (task: { id: string; title: string }) => void;
   onAddTask: (phaseId: string, title: string, goal: string) => void;
   onAdaptProjectPhases?: (updatedPhases: ProjectPhase[]) => void;
+  /** Called when the pipeline marks a plan task done, so the plan card turns completed. */
+  onPipelineTaskDone?: (taskId: string, result: 'completed' | 'failed') => void;
   onOpenNewProjectModal?: () => void;
   /** Present when the plan screen can also be read as columns. */
   onSwitchToKanban?: () => void;
@@ -154,6 +155,8 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
   onUpdateTaskTitle,
   onUpdateCanvasLanes,
   onCompileTaskPrompt,
+  onAddAutoCode,
+  onPipelineTaskDone,
   onAddTask,
   onAdaptProjectPhases,
   onOpenNewProjectModal,
@@ -168,6 +171,13 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
   const [phaseFilter, setPhaseFilter] = useState('all');
   /** The card under the pointer — its links are the ones worth showing at full strength. */
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+  /** The task the autonomous loop is working on, and the answer showing its live log. */
+  const [autopilot, setAutopilot] = useState<{ taskId: string; title: string } | null>(null);
+  /** The whole ready part of the plan running back to back, when the pipeline was asked for. */
+  const [pipeline, setPipeline] = useState<{
+    tasks: Array<{ id: string; title: string; goal?: string; acceptanceCriteria?: string[]; targetFiles?: string[]; dependencies: string[] }>;
+    fromTitle: string;
+  } | null>(null);
   /** The link under the pointer, and the label that explains it. */
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   /** The card the pointer went down on; the drag lives as long as this is set. */
@@ -176,6 +186,8 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
   const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [adaptOpen, setAdaptOpen] = useState(false);
   const [showLinks, setShowLinks] = useState(true);
+  /** The board overview, open by default: it is only in the way on a small screen. */
+  const [mapOpen, setMapOpen] = useState(true);
   /** The right-click menu: what it is about, and where the pointer was. */
   const [menu, setMenu] = useState<PlanMenuTarget | null>(null);
   /**
@@ -394,7 +406,32 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
   }, [livePositions]);
 
   const dependency = useMemo(() => dependencyPlan(layoutTasks), [layoutTasks]);
-  const readyToStart = useMemo(() => new Set(dependency.readyToStart), [dependency]);
+
+  /**
+   * The queue the pipeline runs: the tasks the plan marked ready — plus their backlog order —
+   * as their dependencies are already completed. The plan order is the run order.
+   */
+  const pipelineCandidates = useMemo(() => {
+    const done = new Set(
+      project.phases.flatMap((p) => p.tasks).filter((t) => t.status === 'completed').map((t) => t.id)
+    );
+    return project.phases
+      .flatMap((p) => p.tasks)
+      .filter((t) => (t.status === 'ready' || t.status === 'backlog') && !done.has(t.id))
+      .map((t) => ({
+        id: t.id,
+        title: t.title,
+        goal: t.goal,
+        acceptanceCriteria: t.acceptanceCriteria?.map((c) => c.description) || [],
+        targetFiles: t.relevantFiles || [],
+        dependencies: t.dependencies || []
+      }));
+  }, [project.phases]);
+
+  const startPipeline = (queue: typeof pipelineCandidates) => {
+    if (queue.length === 0 || pipeline) return;
+    setPipeline({ tasks: queue, fromTitle: queue[0]?.title });
+  };
 
   /**
    * The lines to draw: both ends have to exist, and at least one end has to be near the viewport —
@@ -1147,69 +1184,95 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
        * The row wraps on its own width rather than on a breakpoint: the controls drop to their own
        * line exactly when they genuinely do not fit.
        */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-        {/* The controls keep the order they act in: view, filter, then what changes the plan. */}
-        <div className="flex flex-wrap items-center gap-2">
-          {onSwitchToKanban && (
-            <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-950 p-0.5">
-              <span className="flex h-8 items-center gap-1.5 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white">
-                <Rows3 className="w-3.5 h-3.5" />
-                {t.plan.viewCanvas}
-              </span>
-              <button
-                onClick={onSwitchToKanban}
-                className="flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-slate-400 transition-colors hover:text-slate-100 cursor-pointer"
-              >
-                <Columns3 className="w-3.5 h-3.5" />
-                {t.plan.viewKanban}
-              </button>
-            </div>
-          )}
-
-          {/* The options name the phase themselves, so the field needs no label of its own. */}
-          <select
-            value={phaseFilter}
-            onChange={(event) => setPhaseFilter(event.target.value)}
-            aria-label={t.plan.phase}
-            className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-xs font-medium text-slate-300 transition-colors hover:border-slate-700 focus:border-indigo-500 cursor-pointer"
-          >
-            <option value="all" className="bg-slate-900 text-slate-200">
-              {t.plan.allPhases} ({taskCount} {t.plan.tasksCount})
-            </option>
-            {project.phases.map((phase) => (
-              <option key={phase.id} value={phase.id} className="bg-slate-900 text-slate-200">
-                {language === 'ru' ? 'Этап' : 'Phase'} {phase.phaseNumber}: {phase.title}
-              </option>
-            ))}
-          </select>
-
-          <button
-            onClick={handleArrange}
-            title={t.plan.arrangeHint}
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white cursor-pointer"
-          >
-            <Rows3 className="w-4 h-4" />
-            <span>{t.plan.arrange}</span>
-          </button>
-
-          {onAdaptProjectPhases && (
-            <button
-              onClick={() => setAdaptOpen(true)}
-              className="flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-500 cursor-pointer"
+      {/*
+       * The controls, icon-only, with no frames.
+       *
+       * The row used to be six bordered boxes of text: a segmented switch, a long phase filter and
+       * three labelled buttons, which made a board whose whole point is the plan look like a form.
+       * A row of flat icons the size of the board's own zoom controls keeps the plan in front and
+       * leaves the words to the tooltip — the label is still the accessible name, so a screen reader
+       * and a test hear the same words the tooltip shows.
+       */}
+      <div className="flex flex-wrap items-center gap-1">
+        {onSwitchToKanban && (
+          <div className="mr-1 flex items-center gap-0.5">
+            <span
+              title={t.plan.viewCanvas}
+              aria-label={t.plan.viewCanvas}
+              data-active-view="canvas"
+              className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-100"
             >
-              <Bot className="w-4 h-4" />
-              <span>{t.plan.adaptPlanButton}</span>
+              <Rows3 className="h-4 w-4" />
+            </span>
+            <button
+              onClick={onSwitchToKanban}
+              title={t.plan.viewKanban}
+              aria-label={t.plan.viewKanban}
+              className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
+            >
+              <Columns3 className="h-4 w-4" />
             </button>
-          )}
+          </div>
+        )}
 
+        {/* The one control that cannot be an icon: a filter needs its value on screen. */}
+        <select
+          value={phaseFilter}
+          onChange={(event) => setPhaseFilter(event.target.value)}
+          aria-label={t.plan.phase}
+          title={t.plan.phase}
+          className="h-8 max-w-[11rem] cursor-pointer rounded-lg bg-transparent px-2 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-slate-100 focus:bg-slate-800"
+        >
+          <option value="all" className="bg-slate-900 text-slate-200">
+            {t.plan.allPhases} · {taskCount}
+          </option>
+          {project.phases.map((phase) => (
+            <option key={phase.id} value={phase.id} className="bg-slate-900 text-slate-200">
+              {language === 'ru' ? 'Этап' : 'Phase'} {phase.phaseNumber}: {phase.title}
+            </option>
+          ))}
+        </select>
+
+        <button
+          onClick={handleArrange}
+          title={t.plan.arrange}
+          aria-label={t.plan.arrange}
+          className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
+        >
+          <Rows3 className="h-4 w-4" />
+        </button>
+
+        {onAdaptProjectPhases && (
           <button
-            onClick={() => setAddTaskOpen(true)}
-            className="flex h-9 items-center gap-1.5 rounded-lg bg-slate-800 px-3.5 text-xs font-semibold text-white transition-colors hover:bg-slate-700 cursor-pointer"
+            onClick={() => setAdaptOpen(true)}
+            title={t.plan.adaptPlanButton}
+            aria-label={t.plan.adaptPlanButton}
+            className="ml-1 grid h-8 w-8 cursor-pointer place-items-center rounded-lg bg-indigo-600 text-white transition-colors hover:bg-indigo-500"
           >
-            <Plus className="w-4 h-4" />
-            <span>{t.plan.addTaskButton}</span>
+            <Bot className="h-4 w-4" />
           </button>
-        </div>
+        )}
+
+        <button
+          onClick={() => setAddTaskOpen(true)}
+          title={t.plan.addTaskButton}
+          aria-label={t.plan.addTaskButton}
+          className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+
+        {onPipelineTaskDone && pipelineCandidates.length > 0 && (
+          <button
+            onClick={() => startPipeline(pipelineCandidates)}
+            title={t.plan.autoCodeAllButton}
+            aria-label={t.plan.autoCodeAllButton}
+            data-testid="plan-pipeline-button"
+            className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
+          >
+            <ListStart className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {/* A dependency that points at nothing is a plan-level problem, and silently drawing no line
@@ -1586,10 +1649,11 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
                 compact={view.scale < COMPACT_CARD_SCALE}
                 language={language}
                 compileLabel={t.plan.compilePrompt}
+                compileShortLabel={t.plan.compileShort}
+                autocodingId={autopilot?.taskId ?? pipeline?.tasks.find((p) => p.id)?.id ?? null}
                 phaseLabel={`${t.plan.phaseOf} ${phase.phaseNumber}`}
                 laneColor={laneSkins[laneOfStatus(task.status)]?.color}
                 waitingCount={dependency.waitingOn[task.id] || 0}
-                readyToStart={readyToStart.has(task.id)}
                 onDragStart={beginCardDrag}
                 onHoverChange={handleCardHover}
                 onUpdateStatus={onUpdateTaskStatus}
@@ -1681,19 +1745,38 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
           </button>
         </div>
 
-        {/* The overview: what is on the board and where the viewport sits on it. */}
-        <div className="absolute left-3 bottom-3 bg-slate-900/95 border border-slate-800 rounded-xl p-2 shadow-lg backdrop-blur">
-          <div className="flex items-center gap-1.5 mb-1.5 px-1">
-            <MapIcon className="w-3 h-3 text-slate-400" />
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{t.plan.minimapTitle}</span>
-          </div>
+        {/*
+         * The overview: what is on the board and where the viewport sits on it.
+         *
+         * It has no title and no icon any more — a card called "board overview" over a picture of
+         * the board said nothing the picture does not — only one short button that folds it away to
+         * the strip it becomes when closed.
+         */}
+        <div className="absolute left-3 bottom-3 bg-slate-900/95 border border-slate-800 rounded-xl p-1.5 shadow-lg backdrop-blur">
+          <button
+            type="button"
+            onClick={() => setMapOpen((open) => !open)}
+            title={mapOpen ? t.plan.minimapHide : t.plan.minimapShow}
+            aria-label={mapOpen ? t.plan.minimapHide : t.plan.minimapShow}
+            aria-expanded={mapOpen}
+            data-testid="canvas-minimap-toggle"
+            className={`flex items-center justify-center gap-1 rounded-md text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 cursor-pointer ${
+              mapOpen ? 'h-5 w-full' : 'h-8 w-8'
+            }`}
+          >
+            {mapOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+          </button>
           <svg
             width={MINIMAP.width}
             height={MINIMAP.height}
             role="img"
             aria-label={t.plan.minimapHint}
             data-testid="canvas-minimap"
-            className="rounded-lg bg-slate-950 cursor-pointer"
+            data-open={mapOpen ? 'true' : 'false'}
+            aria-hidden={!mapOpen}
+            /* Folded, the map is out of the flow rather than unmounted: reopening it keeps its view. */
+            style={{ display: mapOpen ? 'block' : 'none' }}
+            className="mt-1.5 rounded-lg bg-slate-950 cursor-pointer"
             onPointerDown={handleMinimapPointer}
             onPointerMove={(event) => {
               if (event.buttons === 1) handleMinimapPointer(event);
@@ -1772,7 +1855,53 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
           onColorLane={(color: LaneColor) => menu.lane && saveLane(menu.lane.key, { color })}
           onResetLane={() => menu.lane && saveLane(menu.lane.key, null)}
           onRenameTask={(title) => menu.task && onUpdateTaskTitle?.(menu.task.id, title)}
+          onAutoCode={
+            menu.task
+              ? (task) => {
+                  setAutopilot({ taskId: task.id, title: task.title });
+                  onAddAutoCode?.(task);
+                }
+              : undefined
+          }
           onClose={() => setMenu(null)}
+        />
+      )}
+
+      {pipeline && pipeline.tasks.length > 0 && (
+        <AutopilotPlate
+          task={{
+            id: pipeline.tasks[0].id,
+            title: pipeline.tasks[0].title,
+            goal: pipeline.tasks[0].goal,
+            relevantFiles: pipeline.tasks[0].targetFiles
+          }}
+          project={project}
+          pipeline={{
+            tasks: pipeline.tasks,
+            onTaskDone: (done) => {
+              // The server said the verdict; the card gets it without anyone clicking.
+              onPipelineTaskDone?.(done.taskId, done.result);
+              if (done.result === 'failed') setPipeline(null);
+            }
+          }}
+          onClose={() => setPipeline(null)}
+        />
+      )}
+
+      {autopilot && (
+        <AutopilotPlate
+          task={{
+            id: autopilot.taskId,
+            title: autopilot.title,
+            goal: project.phases
+              .flatMap((p) => p.tasks)
+              .find((task) => task.id === autopilot.taskId)?.goal,
+            relevantFiles: project.phases
+              .flatMap((p) => p.tasks)
+              .find((task) => task.id === autopilot.taskId)?.relevantFiles
+          }}
+          project={project}
+          onClose={() => setAutopilot(null)}
         />
       )}
 
@@ -1823,8 +1952,10 @@ const CanvasCardBase: React.FC<{
   laneColor?: LaneColor;
   /** How many unfinished tasks this one is waiting for. */
   waitingCount: number;
-  /** True when every dependency is finished, so this is what can be picked up today. */
-  readyToStart: boolean;
+  /** The short word on the card's own button; the full name is its tooltip. */
+  compileShortLabel: string;
+  /** The id of the task the autonomous loop is working on, when there is one. */
+  autocodingId: string | null;
   onDragStart: (event: React.PointerEvent<HTMLDivElement>, taskId: string) => void;
   onHoverChange: (taskId: string, hovering: boolean) => void;
   onUpdateStatus: (taskId: string, status: TaskStatus) => void;
@@ -1841,15 +1972,16 @@ const CanvasCardBase: React.FC<{
   compact,
   language,
   compileLabel,
+  compileShortLabel,
   phaseLabel,
   laneColor,
   waitingCount,
-  readyToStart,
   onDragStart,
   onHoverChange,
   onUpdateStatus,
   onCompilePrompt,
-  onOpenMenu
+  onOpenMenu,
+  autocodingId
 }) => {
   const { t } = useLanguage();
   const passed = task.acceptanceCriteria?.filter((criterion) => criterion.passed).length || 0;
@@ -1865,6 +1997,7 @@ const CanvasCardBase: React.FC<{
       data-testid={`plan-card-${task.id}`}
       data-dragging={dragging ? 'true' : undefined}
       data-compact={compact ? 'true' : undefined}
+      data-autocoding={autocodingId === task.id ? 'true' : undefined}
       // The whole card is the handle: it selects and drags, while a press that lands on a control
       // inside it is left alone. `touch-none` belongs here rather than on the header so a touch
       // drag works from anywhere on the card.
@@ -1880,7 +2013,7 @@ const CanvasCardBase: React.FC<{
             : 'border-slate-800'
       } ${dragging ? 'z-30 shadow-2xl shadow-black/60' : 'z-10 shadow-lg'} ${
         marked ? `border-l-4 ${laneSkin.accent}` : ''
-      }`}
+      } ${autocodingId === task.id ? 'animate-pulse ring-2 ring-indigo-400/60' : ''}`}
       style={{
         left: x,
         top: y,
@@ -1903,18 +2036,19 @@ const CanvasCardBase: React.FC<{
             </span>
           </div>
 
-          {(waitingCount > 0 || readyToStart) && (
+          {/*
+           * Only what is *blocking* is said on the card.
+           *
+           * "можно начинать" used to sit on every task whose dependencies were finished — which, on a
+           * plan of eleven tasks in a row, is every card but one: the badge said "this is fine"
+           * eleven times and pushed the goal down the card. The green link that reaches the card
+           * already says the same thing where it matters, and the legend names it.
+           */}
+          {waitingCount > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-              {waitingCount > 0 && (
-                <span className="text-[9px] font-semibold text-amber-300 bg-amber-950/40 border border-amber-900/60 rounded px-1.5 py-0.5">
-                  {t.plan.waitsBadge} {waitingCount}
-                </span>
-              )}
-              {readyToStart && (
-                <span className="text-[9px] font-semibold text-emerald-300 bg-emerald-950/40 border border-emerald-900/60 rounded px-1.5 py-0.5">
-                  {t.plan.linkReady}
-                </span>
-              )}
+              <span className="text-[9px] font-semibold text-amber-300 bg-amber-950/40 border border-amber-900/60 rounded px-1.5 py-0.5">
+                {t.plan.waitsBadge} {waitingCount}
+              </span>
             </div>
           )}
         </div>
@@ -1941,18 +2075,12 @@ const CanvasCardBase: React.FC<{
         )}
 
         <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
-          <select
-            value={task.status}
-            onPointerDown={(event) => event.stopPropagation()}
-            onChange={(event) => onUpdateStatus(task.id, event.target.value as TaskStatus)}
-            className="bg-slate-900 border border-slate-800 text-slate-300 text-[10px] font-semibold rounded px-1.5 py-1 cursor-pointer min-w-0"
-          >
-            <option value="ready">{language === 'ru' ? 'Готово к работе' : 'Ready'}</option>
-            <option value="in_progress">{language === 'ru' ? 'В работе' : 'In Progress'}</option>
-            <option value="review">{language === 'ru' ? 'На проверке' : 'In Review'}</option>
-            <option value="completed">{language === 'ru' ? 'Завершено' : 'Completed'}</option>
-            <option value="blocked">{language === 'ru' ? 'Заблокировано' : 'Blocked'}</option>
-          </select>
+          {/* The status, chosen from a menu drawn by this app rather than by the operating system. */}
+          <TaskStatusMenu
+            status={task.status}
+            onChange={(next) => onUpdateStatus(task.id, next)}
+            compact={compact}
+          />
 
           {/*
            * The one control the board exists for, and it is the one that used to vanish: at the
@@ -1967,14 +2095,14 @@ const CanvasCardBase: React.FC<{
             onClick={() => onCompilePrompt(task.title)}
             title={compileLabel}
             aria-label={compileLabel}
-            className={`bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0 ${
-              compact
-                ? 'w-11 h-11 shadow-lg shadow-indigo-950/60'
-                : 'text-[10px] px-2 py-1'
+            /* A light button on a dark board: it is the one action the board exists for, and it
+               reads as pressable without competing with the lane colours behind it. */
+            className={`bg-slate-100 font-bold text-slate-900 shadow-sm shadow-black/40 transition-colors flex items-center justify-center gap-1 cursor-pointer shrink-0 hover:bg-white ${
+              compact ? 'w-9 h-9 rounded-lg' : 'text-[10px] px-2 py-1 rounded-md'
             }`}
           >
-            <Sparkles className={compact ? 'w-5 h-5' : 'w-3 h-3'} />
-            {!compact && <span>{compileLabel}</span>}
+            <Sparkles className={compact ? 'w-4 h-4' : 'w-3 h-3'} />
+            {!compact && <span>{compileShortLabel}</span>}
           </button>
         </div>
       </div>

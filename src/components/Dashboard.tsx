@@ -2,12 +2,15 @@ import React from 'react';
 import { ProjectState } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { localizeText } from '../utils/textLocalizer';
+import { nextRecommendation } from '../utils/nextAction';
 import { ArrowRight, CheckCircle, AlertTriangle, Sparkles, Bug, Layers, Terminal, ShieldCheck, Play, FolderPlus, Gamepad2, Code2, Cpu } from 'lucide-react';
 
 interface DashboardProps {
   project: ProjectState | null;
   setActiveTab: (tab: string) => void;
   onRunQuickTask?: (taskTitle: string) => void;
+  /** Opens the review on one plan task, which is what a task waiting for a verdict needs. */
+  onReviewTask?: (taskTitle: string) => void;
   onOpenNewProjectModal?: () => void;
 }
 
@@ -20,6 +23,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   project,
   setActiveTab,
   onRunQuickTask,
+  onReviewTask,
   onOpenNewProjectModal
 }) => {
   const { language, t } = useLanguage();
@@ -233,6 +237,39 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const totalTasksCount = allTasks.length || 1;
   const overallProgress = Math.round((completedTasks.length / totalTasksCount) * 100);
 
+  /*
+   * The recommendation is computed from the plan now, not read from the project.
+   *
+   * A stored sentence is written once and never revisited, so it survives the work it described: a
+   * live run found it telling a beginners' Unity project to add a `test` script to package.json and
+   * run `npm test`. When the plan has no tasks there is nothing better to offer, and the stored line
+   * is still shown for projects that predate their plan.
+   */
+  const recommendation = nextRecommendation(project, language === 'ru');
+  const recommendationText = localizeText(recommendation.sentence, language);
+  const recommendationLabel =
+    recommendation.destination === 'review'
+      ? t.dashboard.reviewAnswer
+      : recommendation.destination === 'plan'
+      ? t.dashboard.openPlan
+      : t.dashboard.compilePromptNow;
+
+  const runRecommendation = () => {
+    if (recommendation.destination === 'review' && recommendation.taskTitle) {
+      onReviewTask?.(recommendation.taskTitle);
+      return;
+    }
+    if (recommendation.destination === 'compiler') {
+      // A plan-less project recommends in prose: that prose is the task to compile.
+      const task = recommendation.taskTitle || recommendationText;
+      if (task.trim() && onRunQuickTask) {
+        onRunQuickTask(task);
+        return;
+      }
+    }
+    setActiveTab('project_plan');
+  };
+
   return (
     <div className="space-y-6">
       {/*
@@ -250,7 +287,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {/* One framework name: the type and the engine were printed one after another, and with
                   both stored as "Phaser.js" the pill read "PHASER.JS • PHASER.JS 3 (CANVAS)". */}
               <span className="font-semibold text-indigo-300">{project.engineOrFramework || project.projectType}</span>
-              <span className="text-slate-400">{t.common.targetAgent} {project.selectedAgent}</span>
+              {/*
+                Only when the project names an agent.
+
+                Projects created before the wizard started storing it have no `selectedAgent`, and
+                the label printed "АГЕНТ:" with nothing after it — a beginner reads an empty field as
+                a setting that failed to load.
+              */}
+              {project.selectedAgent && (
+                <span className="text-slate-400">
+                  {t.common.targetAgent} {project.selectedAgent}
+                </span>
+              )}
             </div>
             <h2 className="text-2xl font-bold text-white tracking-tight">{project.name}</h2>
             <p className="text-sm text-slate-300 leading-relaxed">
@@ -283,15 +331,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
               <div>
                 <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">{t.dashboard.nextAction}</div>
-                <div className="text-sm font-bold text-white mt-0.5">{localizeText(project.nextBestAction, language)}</div>
+                <div data-testid="dashboard-recommendation" className="text-sm font-bold text-white mt-0.5">
+                  {recommendationText}
+                </div>
               </div>
             </div>
 
+            {/*
+              The button acts on the sentence above it.
+
+              It used to only switch the tab, which left the compiler's task field holding whatever
+              was set the last time it was opened — a task from another screen, unrelated to the
+              recommendation the user had just read and pressed. Now the label says where it goes:
+              compile the named task, review it, or open the plan when nothing can be compiled.
+            */}
             <button
-              onClick={() => setActiveTab('prompt_compiler')}
+              data-testid="dashboard-recommendation-action"
+              onClick={runRecommendation}
               className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer shrink-0"
             >
-              <span>{t.dashboard.compilePromptNow}</span>
+              <span>{recommendationLabel}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

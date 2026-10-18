@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Check, Palette, RotateCcw, Type } from 'lucide-react';
+import { Check, Cpu, Palette, RotateCcw, Type } from 'lucide-react';
 
 import type { LaneColor } from '../types';
 import type { Translations } from '../i18n/translations';
@@ -51,6 +51,8 @@ export interface PlanContextMenuProps {
   onColorLane: (color: LaneColor) => void;
   onResetLane: () => void;
   onRenameTask: (title: string) => void;
+  /** The card's own right-click action: the autonomous code loop, launched for this task. */
+  onAutoCode?: (task: { id: string; title: string }) => void;
   onClose: () => void;
 }
 
@@ -63,6 +65,7 @@ export const PlanContextMenu: React.FC<PlanContextMenuProps> = ({
   onColorLane,
   onResetLane,
   onRenameTask,
+  onAutoCode,
   onClose
 }) => {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -183,6 +186,21 @@ export const PlanContextMenu: React.FC<PlanContextMenuProps> = ({
           </button>
         </div>
       </div>
+
+      {target.task && onAutoCode && (
+        <button
+          data-testid="plan-context-autocode"
+          onClick={() => {
+            onAutoCode(target.task!);
+            onClose();
+          }}
+          title={t.plan.autoCodeButton}
+          className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded-lg text-[11px] font-semibold text-indigo-300 hover:bg-indigo-600/15 hover:text-indigo-200 cursor-pointer"
+        >
+          <Cpu className="w-3.5 h-3.5" />
+          {t.plan.autoCodeButton}
+        </button>
+      )}
 
       {target.lane && (
         <div className="space-y-1.5">

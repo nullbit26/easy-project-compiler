@@ -110,7 +110,69 @@ const completedReview = {
   continuationPrompt: ''
 };
 
-function mockApi(reviewData: any = completedReview) {
+/**
+ * What the app's own check run answers for this folder: a type check that fails.
+ *
+ * It is the fact the loop was missing — the verdict used to ask the beginner to run `tsc` and
+ * `npm install` in a folder the app can run itself, while 0% next to a failing build looked like a
+ * verdict about the answer alone.
+ */
+const failingVerification = {
+  ranAt: new Date().toISOString(),
+  root: 'C:/demo-project',
+  ok: false,
+  passed: 0,
+  failed: 1,
+  skipped: 0,
+  durationMs: 2100,
+  problems: [
+    {
+      severity: 'error',
+      message: "Type 'string' is not assignable to type 'number'",
+      code: 'TS2322',
+      raw: 'src/main.ts(12,5): error TS2322: Type \u0027string\u0027 is not assignable to type \u0027number\u0027',
+      file: 'src/main.ts',
+      line: 12,
+      column: 5
+    }
+  ],
+  results: [
+    {
+      id: 'typecheck:tsc',
+      kind: 'typecheck',
+      key: 'tsc',
+      labelRu: 'Проверка типов',
+      labelEn: 'Type check',
+      commandLine: 'node node_modules/typescript/bin/tsc --noEmit --pretty false',
+      tokens: ['node', 'node_modules/typescript/bin/tsc', '--noEmit'],
+      status: 'failed',
+      exitCode: 1,
+      durationMs: 2100,
+      problems: [],
+      output: '',
+      outputTruncated: false
+    }
+  ],
+  summary: {
+    ranAt: new Date().toISOString(),
+    ok: false,
+    passed: 0,
+    failed: 1,
+    problemCount: 1,
+    errors: 1,
+    warnings: 0
+  },
+  timeline: [],
+  checkpoints: []
+};
+
+/** Set while a review is deliberately left hanging, so the screen can be looked at mid-flight. */
+let releaseReview: ((data: any) => void) | null = null;
+
+function mockApi(
+  reviewData: any = completedReview,
+  options: { deferReview?: boolean; verification?: any } = {}
+) {
   const spy = vi.spyOn(global, 'fetch').mockImplementation((input: any) => {
     const url = typeof input === 'string' ? input : input?.url ?? '';
     const respond = (data: any) =>
@@ -127,7 +189,32 @@ function mockApi(reviewData: any = completedReview) {
       });
     }
     if (url.includes('/api/prompt/compile')) return respond(compiledPrompt);
-    if (url.includes('/api/session/review')) return respond(reviewData);
+    if (url.includes('/api/files/checks')) {
+      return respond({
+        checks: [
+          {
+            id: 'typecheck:tsc',
+            kind: 'typecheck',
+            key: 'tsc',
+            labelRu: 'Проверка типов',
+            labelEn: 'Type check',
+            commandLine: 'node node_modules/typescript/bin/tsc --noEmit --pretty false',
+            tokens: ['node', 'node_modules/typescript/bin/tsc', '--noEmit']
+          }
+        ]
+      });
+    }
+    if (url.includes('/api/files/verify')) return respond(options.verification ?? failingVerification);
+    if (url.includes('/api/session/review')) {
+      if (options.deferReview) {
+        // A real answer takes 30-60 seconds; the test holds it open to look at the screen.
+        return new Promise<Response>((resolve) => {
+          releaseReview = (data: any) =>
+            resolve({ ok: true, status: 200, json: async () => ({ success: true, data }) } as unknown as Response);
+        });
+      }
+      return respond(reviewData);
+    }
     if (url.includes('/api/files/apply')) {
       return respond({
         backupId: 'b1',
@@ -294,7 +381,14 @@ describe('Beginner step-by-step mode', () => {
     });
     expect(screen.getByText('автотесты')).toBeInTheDocument();
     expect(screen.getByText(/ПРОМПТ ПРОДОЛЖЕНИЯ/)).toBeInTheDocument();
-    expect(screen.getByText(/Попытка 1/)).toBeInTheDocument();
+    // The counter on the verdict itself. The dashboard also names the attempt now (it recommends the
+    // continuation of that task), so the line is matched as the whole line rather than by fragment.
+    expect(
+      screen.getByText(
+        (_text, node) =>
+          node?.tagName === 'SPAN' && /^Готовность задачи: 40% • Попытка 1$/.test((node.textContent || '').trim())
+      )
+    ).toBeInTheDocument();
 
     const firstCall = JSON.parse(String(reviewCalls()[0][1].body));
     expect(firstCall.stepNumber).toBe(1);
@@ -322,6 +416,194 @@ describe('Beginner step-by-step mode', () => {
       ).toBeInTheDocument()
     );
     expect(screen.getByText(/Промпт для следующей попытки • Попытка 3/)).toBeInTheDocument();
+  });
+
+  it('runs the folder’s own checks on the code it just wrote, and judges the answer against them', async () => {
+    const project = makeProject('Beginner / Non-coder');
+    localStorage.setItem('easy_project_compiler_current_project', JSON.stringify(project));
+    localStorage.setItem('easy_project_compiler_projects', JSON.stringify([project]));
+    localStorage.setItem('easy_project_compiler_lang', 'ru');
+
+    const spy = mockApi();
+    const { container } = render(<App />);
+
+    await waitFor(() => expect(window.location.hash).not.toBe('#/simple'), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('button', { name: /Пошаговый помощник/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/simple'), { timeout: 4000 });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Собрать промпт/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Я вставил/ }));
+    const answerBox = await screen.findByPlaceholderText('Вставьте ответ агента...');
+    fireEvent.change(answerBox, { target: { value: 'Готово.\n\n### src/main.ts\n```ts\nconsole.log("saved");\n```\n' } });
+
+    // The writing button is in the answer card now — the code lands in the folder before anything
+    // judges it, which is what gives the checks something real to run on.
+    fireEvent.click(await screen.findByRole('button', { name: /Записать код в файлы проекта/ }));
+    await waitFor(() => expect(callCount(spy, '/api/files/apply')).toBe(1), { timeout: 4000 });
+
+    // The write is the trigger: the app runs the folder's checks itself, with no terminal involved.
+    await waitFor(() => expect(callCount(spy, '/api/files/verify')).toBe(1), { timeout: 4000 });
+    await waitFor(() =>
+      expect(container.querySelector('[data-check-row="typecheck:tsc"]')?.getAttribute('data-check-status')).toBe(
+        'failed'
+      )
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Проверить ответ/ }));
+    await waitFor(() => expect(screen.getByText('Всё сделано')).toBeInTheDocument(), { timeout: 4000 });
+
+    // What reached the reviewer is the measured result, not a description of one: the check that
+    // failed, its command, and the problems it printed.
+    const reviewCall = spy.mock.calls.find((entry: any[]) =>
+      String(typeof entry[0] === 'string' ? entry[0] : entry[0]?.url ?? '').includes('/api/session/review')
+    );
+    const body = JSON.parse(String(reviewCall[1].body));
+    expect(body.checkEvidence.ok).toBe(false);
+    expect(body.checkEvidence.lines[0].status).toBe('failed');
+    expect(body.checkEvidence.lines[0].commandLine).toContain('tsc');
+
+    /*
+     * …and a task is not closed over a failing build. The writer of the answer was never the one who
+     * decided the work was finished: for four attempts the task could be marked done at 0%, in front
+     * of a red type check, which made both the verdict and the strip beside it look like decoration.
+     */
+    expect(screen.getByRole('button', { name: /Отметить задачу выполненной/ })).toBeDisabled();
+    expect(screen.getByText(/Проверки проекта не проходят: Проверка типов/)).toBeInTheDocument();
+    expect(screen.getByText('Отметить выполненной пока нельзя')).toBeInTheDocument();
+  });
+
+  it('names every reason a task cannot be closed, and closes it once they are gone', async () => {
+    const project = makeProject('Beginner / Non-coder');
+    localStorage.setItem('easy_project_compiler_current_project', JSON.stringify(project));
+    localStorage.setItem('easy_project_compiler_projects', JSON.stringify([project]));
+    localStorage.setItem('easy_project_compiler_lang', 'ru');
+
+    const partialReview = {
+      ...completedReview,
+      status: 'Partially Completed',
+      progressPercent: 40,
+      completedCriteria: [],
+      missingCriteria: ['обработка сохранения'],
+      nextBestAction: 'Добавьте сохранение прогресса',
+      continuationPrompt: 'ПРОМПТ ПРОДОЛЖЕНИЯ',
+      agentOutputSummary: 'Кнопка есть, сохранения нет.'
+    };
+
+    const spy = mockApi(partialReview);
+    render(<App />);
+
+    await waitFor(() => expect(window.location.hash).not.toBe('#/simple'), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('button', { name: /Пошаговый помощник/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/simple'), { timeout: 4000 });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Собрать промпт/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Я вставил/ }));
+    fireEvent.change(await screen.findByPlaceholderText('Вставьте ответ агента...'), {
+      target: { value: 'Готово.\n\n### src/main.ts\n```ts\nconsole.log("saved");\n```\n' }
+    });
+    // Writing is what makes the app run the folder's checks; this folder's type check fails.
+    fireEvent.click(await screen.findByRole('button', { name: /Записать код в файлы проекта/ }));
+    await waitFor(() => expect(callCount(spy, '/api/files/verify')).toBe(1), { timeout: 4000 });
+
+    fireEvent.click(screen.getByRole('button', { name: /Проверить ответ/ }));
+    await waitFor(() => expect(screen.getByText('Сделано частично')).toBeInTheDocument(), { timeout: 4000 });
+
+    const mark = screen.getByRole('button', { name: /Отметить задачу выполненной/ });
+    expect(mark).toBeDisabled();
+    // Both causes are named, not just "not allowed": the verdict is a partial pass and the build fails.
+    expect(screen.getByText(/Агент сделал не всё/)).toBeInTheDocument();
+    expect(screen.getByText(/Проверки проекта не проходят: Проверка типов/)).toBeInTheDocument();
+
+    // Pressing it changes nothing in the project.
+    fireEvent.click(mark);
+    const stored = JSON.parse(localStorage.getItem('easy_project_compiler_current_project') || '{}');
+    const storedTask = stored.phases?.[0]?.tasks?.[0];
+    expect(storedTask?.status).not.toBe('completed');
+  });
+
+  it('closes the task when the verdict is a pass and every check passed', async () => {
+    const project = makeProject('Beginner / Non-coder');
+    localStorage.setItem('easy_project_compiler_current_project', JSON.stringify(project));
+    localStorage.setItem('easy_project_compiler_projects', JSON.stringify([project]));
+    localStorage.setItem('easy_project_compiler_lang', 'ru');
+
+    const passingVerification = {
+      ...failingVerification,
+      ok: true,
+      passed: 1,
+      failed: 0,
+      problems: [],
+      results: failingVerification.results.map((result) => ({
+        ...result,
+        status: 'passed',
+        exitCode: 0,
+        problems: []
+      })),
+      summary: { ...failingVerification.summary, ok: true, passed: 1, failed: 0, problemCount: 0, errors: 0 }
+    };
+
+    const spy = mockApi(completedReview, { verification: passingVerification });
+    render(<App />);
+
+    await waitFor(() => expect(window.location.hash).not.toBe('#/simple'), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('button', { name: /Пошаговый помощник/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/simple'), { timeout: 4000 });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Собрать промпт/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Я вставил/ }));
+    fireEvent.change(await screen.findByPlaceholderText('Вставьте ответ агента...'), {
+      target: { value: 'Готово.\n\n### src/main.ts\n```ts\nconsole.log("saved");\n```\n' }
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /Записать код в файлы проекта/ }));
+    await waitFor(() => expect(callCount(spy, '/api/files/verify')).toBe(1), { timeout: 4000 });
+
+    fireEvent.click(screen.getByRole('button', { name: /Проверить ответ/ }));
+    await waitFor(() => expect(screen.getByText('Всё сделано')).toBeInTheDocument(), { timeout: 4000 });
+
+    const mark = screen.getByRole('button', { name: /Отметить задачу выполненной/ });
+    expect(mark).toBeEnabled();
+    expect(screen.queryByText('Отметить выполненной пока нельзя')).toBeNull();
+
+    fireEvent.click(mark);
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem('easy_project_compiler_current_project') || '{}');
+      expect(stored.phases?.[0]?.tasks?.[0]?.status).toBe('completed');
+    });
+  });
+
+  it('says out loud that a run is under way, on the screen and in the sidebar', async () => {
+    const project = makeProject('Beginner / Non-coder');
+    localStorage.setItem('easy_project_compiler_current_project', JSON.stringify(project));
+    localStorage.setItem('easy_project_compiler_projects', JSON.stringify([project]));
+    localStorage.setItem('easy_project_compiler_lang', 'ru');
+
+    mockApi(completedReview, { deferReview: true });
+    const { container } = render(<App />);
+
+    await waitFor(() => expect(window.location.hash).not.toBe('#/simple'), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('button', { name: /Пошаговый помощник/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/simple'), { timeout: 4000 });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Собрать промпт/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Я вставил/ }));
+    const answerBox = await screen.findByPlaceholderText('Вставьте ответ агента...');
+    fireEvent.change(answerBox, { target: { value: 'Готово.\n\n### src/main.ts\n```ts\nconsole.log("saved");\n```\n' } });
+
+    // Fourth attempt of the same task: the run has to be readable as one, not as a frozen screen.
+    fireEvent.click(await screen.findByRole('button', { name: /Проверить ответ/ }));
+
+    await waitFor(() => expect(container.querySelector('[data-session-banner]')).toBeTruthy(), { timeout: 4000 });
+    await waitFor(() =>
+      expect(container.querySelector('[data-session-attempt]')?.textContent).toBe('1')
+    );
+    expect(screen.getByText('Сессия идёт')).toBeInTheDocument();
+
+    releaseReview?.(completedReview);
+    await waitFor(() => expect(screen.getByText('Всё сделано')).toBeInTheDocument(), { timeout: 4000 });
+
+    // The sign goes away with the work: an indicator still blinking after the verdict is a lie.
+    await waitFor(() => expect(container.querySelector('[data-session-banner]')).toBeNull());
+    expect(container.querySelector('[data-session-indicator]')).toBeNull();
   });
 
   it('keeps the workspace folded for every other mode until the user reveals it', async () => {

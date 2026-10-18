@@ -49,14 +49,34 @@ function normalize(text: string): string {
 }
 
 /**
+ * The short name of a task: `task_1_2` answers to `1_2` as well.
+ *
+ * Plans built by the AI name a dependency by where the task sits — phase 1, task 2 — because that is
+ * the only handle it has while it is still writing the plan, and the app assigns the real ids
+ * afterwards. Those answers are still stored with the shorthand, so the two names have to mean the
+ * same task; otherwise the board reports "dependencies that name nothing in the plan" for a plan
+ * that is perfectly well connected.
+ */
+function shortIdOf(id: string): string | null {
+  const match = /^task_(.+)$/.exec(id);
+  return match ? match[1] : null;
+}
+
+/**
  * A dependency is usually a task id, but an AI-generated plan can carry a title instead. Both are
  * accepted, ids first; anything that matches nothing is reported rather than silently dropped.
  */
 export function dependencyPlan(tasks: DependencyTask[]): DependencyPlan {
   const byId = new Map<string, DependencyTask>();
   const byTitle = new Map<string, DependencyTask>();
+
+  // Real ids first, so a short name can never shadow a task that genuinely has that id.
+  for (const task of tasks) byId.set(task.id, task);
   for (const task of tasks) {
-    byId.set(task.id, task);
+    const short = shortIdOf(task.id);
+    if (short && !byId.has(short)) byId.set(short, task);
+  }
+  for (const task of tasks) {
     const key = normalize(task.title || '');
     if (key && !byTitle.has(key)) byTitle.set(key, task);
   }

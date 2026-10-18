@@ -29,8 +29,6 @@ import { useCopyFlash } from '../utils/copyText';
 import {
   Terminal,
   FileCode,
-  FolderOpen,
-  Shield,
   ShieldCheck,
   RefreshCw,
   Copy,
@@ -390,21 +388,8 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
       {/* What the real files already contain */}
       {(hasLocalFacts || arch || insights) && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-                {t.map.factsTitle}
-              </span>
-              <p className="text-xs text-slate-400 mt-0.5">{t.map.factsSubtext}</p>
-            </div>
-            {insights?.engine && (
-              <span className="text-[10px] font-mono bg-slate-800/50 text-slate-400 px-2 py-0.5 rounded">
-                {t.map.insightsEngine}: {insights.engine}
-              </span>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
+          {/* No heading: the chips themselves are the facts, and each names what it counts. */}
+          <div className="flex flex-wrap items-center gap-2">
             {(['implemented', 'partial', 'stub', 'empty'] as FileImplementation[])
               .filter((status) => counts[status] > 0)
               .map((status) => (
@@ -416,13 +401,19 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
                 </span>
               ))}
             {arch?.mainEntry && (
-              <span className="text-[11px] font-mono bg-slate-800/50 text-purple-300 px-2 py-1 rounded-lg">
-                {t.map.mainEntryLabel}: {arch.mainEntry}
+              <span
+                title={t.map.mainEntryLabel}
+                className="text-[11px] font-mono bg-slate-800/50 text-indigo-300 px-2 py-1 rounded-lg"
+              >
+                {arch.mainEntry}
               </span>
             )}
             {typeof arch?.componentsOrScriptsCount === 'number' && (
-              <span className="text-[11px] bg-slate-800/50 text-slate-300 px-2 py-1 rounded-lg">
-                {t.map.scriptsWithCode}: {arch.componentsOrScriptsCount}
+              <span
+                title={t.map.scriptsWithCode}
+                className="text-[11px] bg-slate-800/50 text-slate-300 px-2 py-1 rounded-lg"
+              >
+                {arch.componentsOrScriptsCount}
               </span>
             )}
             {arch && (
@@ -437,20 +428,29 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               </span>
             )}
             {typeof arch?.fileCount === 'number' && (
-              <span className="text-[11px] bg-slate-800/50 text-slate-400 px-2 py-1 rounded-lg">
-                {t.map.analyzedFilesLabel}: {arch.fileCount}
+              <span
+                title={t.map.analyzedFilesLabel}
+                className="text-[11px] bg-slate-800/50 text-slate-400 px-2 py-1 rounded-lg"
+              >
+                {arch.fileCount}
+              </span>
+            )}
+            {insights?.engine && (
+              <span className="text-[10px] font-mono bg-slate-800/50 text-slate-400 px-2 py-1 rounded-lg">
+                {insights.engine}
               </span>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-slate-800">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={handleDescribeImplemented}
               disabled={isDescribing || files.length === 0}
-              className="bg-indigo-600 enabled:hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs px-3 py-2 rounded-lg transition-all flex items-center gap-2 enabled:cursor-pointer"
+              title={isDescribing ? t.map.describingButton : t.map.describeButton}
+              aria-label={isDescribing ? t.map.describingButton : t.map.describeButton}
+              className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-600 enabled:hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white transition-all enabled:cursor-pointer"
             >
-              {isDescribing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-              <span>{isDescribing ? t.map.describingButton : t.map.describeButton}</span>
+              {isDescribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             </button>
             {describeError && (
               <span className="text-[11px] text-rose-300 flex items-center gap-1.5">
@@ -466,11 +466,8 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
         {/* Left Column: Interactive File Tree (5 cols) */}
         <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-              <FolderOpen className="w-4 h-4 text-purple-400" />
-              <span>
-                {isRu ? 'Проверенные файлы' : 'Verified File Index'} ({files.length} {t.map.filesCount})
-              </span>
+            <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+              {isRu ? 'Проверенные файлы' : 'Verified File Index'} ({files.length})
             </h3>
             <span className="text-[10px] text-slate-400 font-semibold">{project.projectType}</span>
           </div>
@@ -485,12 +482,12 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
                   onClick={() => setSelectedFile(file)}
                   className={`p-2.5 rounded-lg text-xs cursor-pointer transition-colors flex items-center justify-between gap-2 ${
                     isSelected
-                      ? 'bg-purple-500/10 text-slate-100 font-semibold'
+                      ? 'bg-indigo-500/10 text-slate-100 font-semibold'
                       : 'text-slate-400 hover:bg-slate-950/60 hover:text-slate-200'
                   }`}
                 >
                   <div className="flex items-center gap-2 truncate">
-                    <FileCode className="w-4 h-4 text-purple-400 shrink-0" />
+                    <FileCode className="w-4 h-4 text-slate-500 shrink-0" />
                     <span className="font-mono text-[11px] truncate">{file.path}</span>
                   </div>
                   <span className="flex items-center gap-1 shrink-0">
@@ -519,14 +516,13 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
           {/* Selected File Symbol Breakdown */}
           {selectedFile && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+              {/*
+                The path is the title: on a file that is named, an eyebrow saying "file metadata"
+                repeated the one thing the reader had already clicked.
+              */}
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <div>
-                  <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">
-                    {t.map.fileMetadataTitle}
-                  </span>
-                  <h4 className="text-sm font-bold text-white font-mono mt-0.5">{selectedFile.path}</h4>
-                </div>
-                <span className="text-[10px] bg-purple-500/15 text-purple-300 px-2 py-0.5 rounded font-bold uppercase">
+                <h4 className="text-sm font-bold text-white font-mono truncate">{selectedFile.path}</h4>
+                <span className="text-[10px] bg-slate-800/60 text-slate-400 px-2 py-0.5 rounded font-semibold uppercase shrink-0">
                   {selectedFile.type}
                 </span>
               </div>
@@ -553,14 +549,14 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               {/* Symbols */}
               {selectedFile.symbols && selectedFile.symbols.length > 0 && (
                 <div className="space-y-1 pt-2 border-t border-slate-800">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                     {t.map.symbolsTitle}
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {selectedFile.symbols.map((sym, i) => (
                       <span
                         key={i}
-                        className="text-[11px] font-mono bg-slate-800/50 text-purple-300 px-2 py-0.5 rounded"
+                        className="text-[11px] font-mono bg-slate-800/50 text-slate-300 px-2 py-0.5 rounded"
                       >
                         {sym}
                       </span>
@@ -572,17 +568,18 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               {/* Imports */}
               {selectedFile.imports && selectedFile.imports.length > 0 && (
                 <div className="space-y-1 pt-2 border-t border-slate-800">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                     {t.map.importsTitle}
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {selectedFile.imports.map((item, i) => (
-                      <span
-                        key={i}
-                        className="text-[11px] font-mono bg-slate-950 border border-slate-800 text-sky-300 px-2 py-0.5 rounded"
-                      >
-                        {item}
-                      </span>
+                    <span
+                      key={i}
+                      className="text-[11px] font-mono bg-slate-950 border border-slate-800 text-slate-400 px-2 py-0.5 rounded"
+                      title={t.map.importsTitle}
+                    >
+                      {item}
+                    </span>
                     ))}
                   </div>
                 </div>
@@ -591,10 +588,10 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               {/* What the AI found in this very file */}
               {selectedInsight && (
                 <div className="space-y-1 pt-2 border-t border-slate-800">
-                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3" />
-                    {t.map.fileInsightTitle}
-                  </span>
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3" />
+                  {t.map.fileInsightTitle}
+                </span>
                   {selectedInsight.implemented.length > 0 ? (
                     <ul className="space-y-1">
                       {selectedInsight.implemented.map((line, i) => (
@@ -616,7 +613,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
           {insights && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                   <Sparkles className="w-3 h-3" />
                   {t.map.insightsTitle}
                 </span>
@@ -629,14 +626,14 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
 
               {insights.nextSteps.length > 0 && (
                 <div className="space-y-1.5 pt-2 border-t border-slate-800">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <ListChecks className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <ListChecks className="w-3.5 h-3.5 text-slate-500" />
                     {t.map.insightsNextSteps}
                   </span>
                   <ul className="space-y-1">
                     {insights.nextSteps.map((step, i) => (
                       <li key={i} className="text-xs text-slate-300 flex items-start gap-1.5">
-                        <ArrowRight className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5" />
+                        <ArrowRight className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
                         <span>{step}</span>
                       </li>
                     ))}
@@ -648,45 +645,53 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
 
           {/* AI Agent Rules Generator Panel */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-indigo-400" />
-                  <span>{t.map.rulesTitle}</span>
-                </h3>
-              </div>
+            {/*
+              No heading over the tabs: AGENTS.md / CLAUDE.md / .cursor/rules say what this panel is.
+              Copy copies the open tab — its title names which one, the tooltip says the rest.
+            */}
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={handleCopyRules}
+                title={
+                  ruleCopy.state === 'copied'
+                    ? t.common.copied
+                    : ruleCopy.state === 'failed'
+                    ? t.common.copyFailed
+                    : t.map.copyRulesButton
+                }
+                aria-label={
+                  ruleCopy.state === 'copied'
+                    ? t.common.copied
+                    : ruleCopy.state === 'failed'
+                    ? t.common.copyFailed
+                    : t.map.copyRulesButton
+                }
+                className={`grid h-8 w-8 place-items-center rounded-lg transition-all cursor-pointer ${
+                  ruleCopy.state === 'copied'
+                    ? 'bg-emerald-700 text-emerald-100'
+                    : ruleCopy.state === 'failed'
+                    ? 'bg-amber-800 text-amber-100'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                {ruleCopy.state === 'copied' ? (
+                  <Check className="w-4 h-4" />
+                ) : ruleCopy.state === 'failed' ? (
+                  <AlertTriangle className="w-4 h-4" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleCopyRules}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  {ruleCopy.state === 'copied' ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-300" />
-                  ) : ruleCopy.state === 'failed' ? (
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5" />
-                  )}
-                  <span>
-                    {ruleCopy.state === 'copied'
-                      ? t.common.copied
-                      : ruleCopy.state === 'failed'
-                      ? t.common.copyFailed
-                      : t.map.copyRulesButton}
-                  </span>
-                </button>
-
-                <button
-                  onClick={handleOpenConfirm}
-                  disabled={!folderRoot || isChecking || isWriting}
-                  title={folderRoot ? folderRoot : t.map.rulesNoFolder}
-                  className="bg-indigo-600 enabled:hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1.5 enabled:cursor-pointer"
-                >
-                  {isChecking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderDown className="w-3.5 h-3.5" />}
-                  <span>{t.map.rulesWriteButton}</span>
-                </button>
-              </div>
+              <button
+                onClick={handleOpenConfirm}
+                disabled={!folderRoot || isChecking || isWriting}
+                title={folderRoot ? folderRoot : t.map.rulesNoFolder}
+                aria-label={t.map.rulesWriteButton}
+                className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-600 enabled:hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white shadow-sm transition-all enabled:cursor-pointer"
+              >
+                {isChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderDown className="w-4 h-4" />}
+              </button>
             </div>
 
             {folderKnown && !folderRoot && (
@@ -748,7 +753,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               className="bg-slate-950/60 rounded-lg p-3 space-y-2.5"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>{t.map.rulesAuditTitle}</span>
                 </span>
@@ -786,8 +791,6 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
                   </button>
                 </div>
               </div>
-
-              <p className="text-[10px] text-slate-400 leading-relaxed">{t.map.rulesAuditSubtext}</p>
 
               {/*
                 When the rules were last compared with the folder. The check runs by itself after
@@ -887,9 +890,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
                     <span>
                       {t.map.rulesAuditFix} ({fixableFindings.length})
                     </span>
-                  </button>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">{t.map.rulesAuditFixHint}</p>
-                </div>
+                  </button>                  </div>
               )}
 
               {fixOutcome && (

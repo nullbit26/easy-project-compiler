@@ -43,15 +43,29 @@ export function extractFilesFromAgentOutput(
       }
     }
 
-    // Check preceding text before the fence for Markdown headers:
-    // e.g. ### `src/App.tsx` or File: `src/App.tsx`
+    /*
+     * Check the lines just above the fence for a Markdown header — `### src/App.tsx`,
+     * `**package.json**`, `File: tsconfig.json`.
+     *
+     * The closest line wins, and only a line that is *nothing but* a name counts. The old version
+     * searched the last 200 characters for the first "###" it could find, so an answer with several
+     * files in it named the earlier file again: `### src/main.ts … ### package.json` came back as
+     * one file called `src/main.ts`, and the dedupe below then dropped it entirely. That is how the
+     * files the reviewer keeps asking for — package.json, tsconfig.json, jest.config.js — could
+     * never reach the folder: the beginner pressed "write the code" and got a single source file.
+     */
     if (!filePath) {
-      const precedingText = text.slice(Math.max(0, match.index - 200), match.index);
-      const headerMatch = precedingText.match(
-        /(?:###|##|#|File:)\s*[`*]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`*]?/i
-      );
-      if (headerMatch && headerMatch[1]) {
-        filePath = headerMatch[1].trim();
+      const linesAbove = text.slice(0, match.index).split('\n').slice(-3);
+      for (let i = linesAbove.length - 1; i >= 0; i -= 1) {
+        const line = linesAbove[i].trim();
+        if (!line || line.length > 160) continue;
+        const headerMatch = line.match(
+          /^(?:#{1,6}\s+|\/\/\s*|#\s*|File:\s*)?[`'"*]*((?:[A-Za-z0-9_.\-]+\/)*[A-Za-z0-9_.\-]+\.[A-Za-z0-9]+)[`'"*.,:;\s]*$/i
+        );
+        if (headerMatch && headerMatch[1]) {
+          filePath = headerMatch[1].trim();
+          break;
+        }
       }
     }
 

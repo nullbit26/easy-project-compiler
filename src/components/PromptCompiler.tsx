@@ -263,23 +263,29 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
             hold and the order is carried by the layout alone.
           */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <label className="block text-xs font-bold text-slate-200">{t.compiler.panel1Title}</label>
-
+            {/*
+              The box says what it holds: the placeholder names the task, the field itself carries
+              the name for screen readers — no heading above both.
+            */}
             <textarea
               value={taskInput}
               onChange={(e) => setTaskInput(e.target.value)}
               placeholder={t.compiler.taskPlaceholder}
               rows={3}
+              aria-label={t.compiler.panel1Title}
               className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-100 focus:border-indigo-500 transition-colors"
             />
 
             {/* Quick Task Selector from Plan */}
-            <div className="space-y-2">
-              <span className="text-[11px] font-semibold text-slate-400 block">{t.compiler.chooseTaskFromPlan}</span>
+            <div
+              title={t.compiler.chooseTaskFromPlan}
+              aria-label={t.compiler.chooseTaskFromPlan}
+              className="space-y-2"
+            >
               <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
                 {project.phases.map((phase) => (
                   <div key={phase.id} className="space-y-1">
-                    <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                       {language === 'ru' ? `Этап ${phase.phaseNumber}` : `Phase ${phase.phaseNumber}`}: {cleanPhaseTitle(phase.title)}
                     </span>
                     <div className="flex flex-wrap gap-1.5">
@@ -306,8 +312,6 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
 
           {/* Panel 2: Context Mode & File Budget Selector */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <label className="block text-xs font-bold text-slate-200">{t.compiler.panel2Title}</label>
-
             {settingsAreChosenForUser && !showContextSetup ? (
               <div className="space-y-2 bg-slate-950/60 border border-slate-800 rounded-lg p-3">
                 <p className="text-[11px] text-slate-400">{t.compiler.autoChosen}</p>
@@ -346,15 +350,9 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
               ))}
             </div>
 
-            <p className="text-[11px] text-slate-400">
-              {contextMode === 'Minimal' && t.contextModes.minimalDesc}
-              {contextMode === 'Balanced' && t.contextModes.balancedDesc}
-              {contextMode === 'Full' && t.contextModes.fullDesc}
-            </p>
-
-            {/* Available Files Checklist */}
+            {/* Available Files Checklist: the count is in its row — no line above it. */}
             <div className="space-y-2 pt-2 border-t border-slate-800">
-              <span className="text-[11px] font-bold text-slate-300">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                 {t.compiler.verifiedFileIndex} ({selectedFilePaths.length}/{availableFiles.length})
               </span>
 
@@ -400,25 +398,21 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
               </>
             )}
 
-            {/* The only trigger: compile on demand, never in the background. */}
+            {/*
+              The only trigger: compile on demand, never in the background. An icon with the name in
+              its tooltip, like every other control on the plan screens — the result next to it tells
+              the rest of the story.
+            */}
             <button
               onClick={handleCompile}
               disabled={isCompiling}
-              className={`w-full bg-indigo-600 enabled:hover:bg-indigo-500 text-white font-bold text-xs py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 enabled:cursor-pointer disabled:opacity-50 ${
+              title={isCompiling ? t.compiler.compilingPrompt : compiledPrompt ? t.compiler.recompilePrompt : t.compiler.startCompile}
+              aria-label={isCompiling ? t.compiler.compilingPrompt : compiledPrompt ? t.compiler.recompilePrompt : t.compiler.startCompile}
+              className={`w-full h-9 bg-indigo-600 enabled:hover:bg-indigo-500 text-white transition-all shadow-sm grid place-items-center rounded-lg enabled:cursor-pointer disabled:opacity-50 ${
                 isOutdated ? 'ring-2 ring-amber-500/50' : ''
               }`}
             >
-              {isCompiling ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>{t.compiler.compilingPrompt}</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-3.5 h-3.5" />
-                  <span>{compiledPrompt ? t.compiler.recompilePrompt : t.compiler.startCompile}</span>
-                </>
-              )}
+              {isCompiling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
             </button>
           </div>
         </div>
@@ -427,50 +421,74 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
         <div className="lg:col-span-7 space-y-5">
           {/* Panel 3: Compiled Prompt Result */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
+            {/*
+              The output has no heading of its own: the token count and, when the offline engine
+              answered, its badge say everything a title would — the box itself is the result.
+              Both buttons are icons with the name in the tooltip, so actions read in one glance.
+            */}
             <div className="flex items-center justify-between">
-              <div>
-                {/* No eyebrow above the heading: "РЕЗУЛЬТАТ КОМПИЛЯЦИИ" only repeated
-                    "Скомпилированный промпт" one line lower. */}
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  {/* The agent is named once, in the stage header — not again over the output. */}
-                  <span>{t.compiler.compiledOutputTitle}</span>
-                  {compiledPrompt && (
-                    <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded font-mono">
-                      ~{compiledPrompt.estimatedTokens} {language === 'ru' ? 'токенов' : 'tokens'}
-                    </span>
-                  )}
-                </h3>
+              <div className="flex items-center gap-2">
+                {compiledPrompt && (
+                  <span className="text-[10px] bg-slate-800/60 text-slate-400 px-2 py-0.5 rounded font-mono">
+                    ~{compiledPrompt.estimatedTokens} {language === 'ru' ? 'токенов' : 'tokens'}
+                  </span>
+                )}
+                {compiledPrompt?.engine === 'local' && (
+                  <span
+                    data-testid="compiler-local-engine"
+                    title={
+                      language === 'ru'
+                        ? 'Модель не ответила: промпт собран из задачи, файлов проекта и команд его package.json'
+                        : 'No model answered: the prompt was assembled from the task, the project files and its package.json scripts'
+                    }
+                    className="text-[10px] bg-amber-950/60 text-amber-300 border border-amber-900 px-2 py-0.5 rounded font-mono"
+                  >
+                    {language === 'ru' ? 'без ИИ' : 'no AI'}
+                  </span>
+                )}
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={handleDownloadPrompt}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
                   title={t.common.export}
+                  aria-label={t.common.export}
+                  className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all cursor-pointer"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{t.common.export}</span>
+                  <Download className="w-4 h-4" />
                 </button>
 
                 <button
                   onClick={handleCopyPrompt}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-                >
-                  {copyFlash.state === 'copied' ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-300" />
-                  ) : copyFlash.state === 'failed' ? (
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5" />
-                  )}
-                  <span>
-                    {copyFlash.state === 'copied'
+                  title={
+                    copyFlash.state === 'copied'
                       ? t.common.copied
                       : copyFlash.state === 'failed'
                       ? t.common.copyFailed
-                      : t.common.copy}
-                  </span>
+                      : t.common.copy
+                  }
+                  aria-label={
+                    copyFlash.state === 'copied'
+                      ? t.common.copied
+                      : copyFlash.state === 'failed'
+                      ? t.common.copyFailed
+                      : t.common.copy
+                  }
+                  className={`grid h-8 w-8 place-items-center rounded-lg transition-all cursor-pointer ${
+                    copyFlash.state === 'copied'
+                      ? 'bg-emerald-700 text-emerald-100'
+                      : copyFlash.state === 'failed'
+                      ? 'bg-amber-800 text-amber-100'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  {copyFlash.state === 'copied' ? (
+                    <Check className="w-4 h-4" />
+                  ) : copyFlash.state === 'failed' ? (
+                    <AlertTriangle className="w-4 h-4" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
                 </button>
               </div>
             </div>
@@ -486,7 +504,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                 className="bg-slate-950/60 rounded-lg p-3 space-y-2"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                     <ShieldCheck className="w-3.5 h-3.5" />
                     <span>{t.compiler.rulesCheckTitle}</span>
                   </span>
@@ -509,8 +527,6 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                     </span>
                   )}
                 </div>
-
-                <p className="text-[10px] text-slate-400 leading-relaxed">{t.compiler.rulesCheckSubtext}</p>
 
                 {/*
                   The check behind the prompt was made a moment ago, when the prompt was compiled.
@@ -630,17 +646,13 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
         footnote to the output instead of the next thing to do with it.
       */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-xs font-bold text-slate-200">
-                  {t.compiler.panel4Title}
-                </h4>
-                <p className="text-[11px] text-slate-400">
-                  {t.compiler.panel4Subtext}
-                </p>
-              </div>
-
-              {onSendToReview && (
+            {/*
+              The answer goes into the field and leaves with one icon: the placeholder names the
+              field, the tooltip names where the button goes. No heading and no paragraph above
+              both — they said what the placeholder and the icon already say.
+            */}
+            {onSendToReview && (
+              <div className="flex justify-end">
                 <button
                   onClick={() =>
                     onSendToReview(
@@ -649,19 +661,22 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                       compiledPrompt?.acceptanceCriteria
                     )
                   }
-                  className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs px-3.5 py-2 rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                  title={simulatedResult.trim() ? t.compiler.reviewPastedCode : t.compiler.goToReview}
+                  aria-label={simulatedResult.trim() ? t.compiler.reviewPastedCode : t.compiler.goToReview}
+                  className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all cursor-pointer shrink-0"
                 >
-                  <span>{simulatedResult.trim() ? t.compiler.reviewPastedCode : t.compiler.goToReview} ➔</span>
+                  <ArrowRight className="w-4 h-4" />
                 </button>
-              )}
-            </div>
+              </div>
+            )}
 
             <textarea
               value={simulatedResult}
               onChange={(e) => setSimulatedResult(e.target.value)}
               placeholder={t.compiler.simulatedResultPlaceholder}
               rows={3}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 focus:border-emerald-500 font-mono placeholder:text-slate-400"
+              aria-label={t.compiler.panel4Title}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 focus:border-indigo-500 font-mono placeholder:text-slate-400"
             />
       </div>
     </div>

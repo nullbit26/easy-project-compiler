@@ -946,6 +946,24 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                       >
                         {reviewResult.progressPercent}% {language === 'ru' ? 'Готово' : 'Complete'}
                       </span>
+                      {/*
+                        Who judged it. Without a key no model reads the answer: the offline engine
+                        matches the task's criteria against the pasted text and adds the app's own
+                        checks. Saying so is what keeps the percentage honest.
+                      */}
+                      {reviewResult.engine === 'local' && (
+                        <span
+                          data-testid="review-local-engine"
+                          title={
+                            language === 'ru'
+                              ? 'Модель не отвечала: процент посчитан по тексту ответа и по проверкам, которые запустило приложение'
+                              : 'No model answered: the percentage comes from the answer text and the checks the app ran itself'
+                          }
+                          className="text-[10px] bg-amber-950/60 text-amber-300 border border-amber-900 px-2 py-0.5 rounded font-mono"
+                        >
+                          {language === 'ru' ? 'без ИИ' : 'no AI'}
+                        </span>
+                      )}
                     </div>
                   </div>
 

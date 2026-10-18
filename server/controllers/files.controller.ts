@@ -505,6 +505,7 @@ function buildFixSection(
   return { section, files: files.slice(0, MAX_FIX_FILES) };
 }
 
+
 /**
  * The second half of the loop: takes the failing checks and asks the model for a minimal fix.
  * Like every other proposal it only returns text — the user reviews and applies it, and the

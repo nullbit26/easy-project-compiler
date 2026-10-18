@@ -11,6 +11,8 @@ import {
   qualityBlock
 } from '../../server/utils/levelGuidance';
 import { buildOfflineFirstSteps, offlinePlanVoice } from '../../server/utils/offlineFirstSteps';
+import { hasTestRunner } from '../../server/utils/localAcceptance';
+import { folderFactsForRules } from '../../server/utils/rulesStaleness';
 import { hasAiProvider } from '../../server/ai/aiProvider';
 import { compilePrompt } from '../../server/controllers/prompt.controller';
 import { reviewSession } from '../../server/controllers/session.controller';
@@ -175,6 +177,13 @@ describe('Working mode: autonomy, never quality', () => {
       prompts.set(level, promptText);
     }
 
+    /*
+     * The list is the same at every level, but its test demand is worded for the folder the prompt is
+     * compiled against: a project with no test script is not asked to invent one. Both come from the
+     * same facts the controller read, so the assertion measures the split instead of pinning one of
+     * the two wordings to every machine.
+     */
+    const testRunner = hasTestRunner(folderFactsForRules().scripts);
     const qualitySections = new Set<string>();
     for (const level of LEVELS) {
       const promptText = prompts.get(level) as string;
@@ -182,7 +191,11 @@ describe('Working mode: autonomy, never quality', () => {
       expect(promptText).toContain('## Кто делает работу');
       expect(promptText).toContain(levelInstructionBlock(level, true).split('\n')[1].replace('Кто делает работу: ', ''));
       // …and so is the level-independent quality list, line for line.
-      for (const line of QUALITY_REQUIREMENTS.ru) expect(promptText).toContain(line);
+      for (const line of qualityBlock(true, testRunner).split('\n')) {
+        expect(promptText).toContain(line.replace(/^- /, ''));
+      }
+      // The demand itself never disappears — only its wording follows the folder.
+      expect(promptText).toContain('Проверки');
       qualitySections.add(sectionOf(promptText, '## Требования к качеству кода', '## Критерии приемки'));
     }
 
@@ -349,7 +362,10 @@ describe('Working mode: autonomy, never quality', () => {
     const promptText = await compileOffline('Advanced', 'en');
     expect(promptText).toContain('## Who does the work');
     expect(promptText).toContain('## Code quality requirements (identical at every level)');
-    for (const line of QUALITY_REQUIREMENTS.en) expect(promptText).toContain(line);
+    const testRunner = hasTestRunner(folderFactsForRules().scripts);
+    for (const line of qualityBlock(false, testRunner).split('\n')) {
+      expect(promptText).toContain(line.replace(/^- /, ''));
+    }
   });
 });
 

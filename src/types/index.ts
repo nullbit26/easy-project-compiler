@@ -261,6 +261,11 @@ export interface CompiledPrompt {
   createdAt: string;
   /** What the prompt was told about the project's rules, when they were checked. */
   rulesCheck?: RulesCheckSummary;
+  /**
+   * The engine that wrote it. `local` means no model answered: the prompt was assembled from the
+   * folder's facts and the task text, and the screen says so instead of passing it off as compiled.
+   */
+  engine?: string;
 }
 
 export interface SessionReview {
@@ -275,6 +280,8 @@ export interface SessionReview {
   nextBestAction: string;
   agentOutputSummary: string;
   continuationPrompt?: string;
+  /** `local` means the verdict was counted from the answer's text, not read by a model. */
+  engine?: string;
 }
 
 export interface ReviewAttempt {
@@ -349,6 +356,13 @@ export interface ProjectState {
   workspaceRoot?: string;
   activeTaskId?: string;
   recentErrors: ErrorDiagnosis[];
+  /**
+   * The last sentence a model wrote about what to do next, kept with the project.
+   *
+   * The dashboard does not print it while the plan has tasks: it derives its own recommendation from
+   * the task states (`utils/nextAction.ts`), because a sentence written once goes stale silently.
+   * This stays as the fallback for a project with no plan yet, and as the review's own copy.
+   */
   nextBestAction: string;
   rulesFilesContent: {
     agentsMd: string;

@@ -204,14 +204,17 @@ describe('The workspace list is grouped, and the panels of a stage are not numbe
     expect(comesBefore(compiler, project)).toBe(true);
   }, 20000);
 
-  it('5. names the compiler’s panels instead of numbering them under a numbered stage', async () => {
+  it("5. names the compiler's panels instead of numbering them under a numbered stage", async () => {
     openScreen(makeProject(), '#/compiler');
 
     // The stage is the journey's step 3; the panels used to carry 1, 2 and 3 of their own.
     expect(await screen.findByText('Шаг 3: Промпт')).toBeInTheDocument();
-    expect(screen.getByText('Что нужно сделать')).toBeInTheDocument();
-    expect(screen.getByText('Что увидит агент')).toBeInTheDocument();
-    expect(screen.getByText('Запустить в агенте и проверить')).toBeInTheDocument();
+    // The panels are still named, but the name is now the field's own accessible name
+    // (aria-label): a visible heading above each box said what the field and the button below
+    // it already say, and the minimal layout leaves the words to the thing they belong to.
+    expect(screen.getByRole('textbox', { name: 'Что нужно сделать' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Начать' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Запустить в агенте и проверить' })).toBeInTheDocument();
     expect(screen.queryByText('1. Описание задачи пользователя')).toBeNull();
     expect(screen.queryByText('2. Объем контекста и файлы')).toBeNull();
   }, 20000);

@@ -7,6 +7,7 @@ import {
   TaskStatus,
   ReviewAttempt,
   ProjectFile,
+  ProjectMap,
   ProjectTask,
   CanvasLaneSkin,
   FileInsights
@@ -255,10 +256,28 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     );
   };
 
+  /**
+   * The project's map, or one built from the project's own identity.
+   *
+   * Not every project carries a map: the ones that come from the canvas demo hold a plan and a
+   * folder and nothing else. The folder is still the truth about its files, so the first write that
+   * needs a map creates one instead of throwing on the missing one.
+   */
+  const projectMapOf = (project: ProjectState): ProjectMap =>
+    project.projectMap || {
+      projectName: project.name,
+      projectType: project.projectType,
+      engineOrFramework: project.engineOrFramework,
+      language: project.language,
+      rulesFiles: [],
+      files: []
+    };
+
   const onUpdateProjectFiles = (updatedFiles: Array<{ path: string; content: string }>) => {
     if (!currentProject) return;
 
-    const existingFiles = [...currentProject.projectMap.files];
+    const map = projectMapOf(currentProject);
+    const existingFiles = [...(map.files || [])];
 
     updatedFiles.forEach((uf) => {
       const existingIdx = existingFiles.findIndex((f) => f.path === uf.path || f.path.endsWith(uf.path));
@@ -284,7 +303,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const updatedProject = {
       ...currentProject,
       projectMap: {
-        ...currentProject.projectMap,
+        ...map,
         files: existingFiles
       }
     };
@@ -305,7 +324,8 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const onSyncProjectFiles = (files: ProjectFile[], root: string | null) => {
     if (!currentProject) return;
 
-    const previousFiles = currentProject.projectMap.files;
+    const map = projectMapOf(currentProject);
+    const previousFiles = map.files || [];
     const merged = files.map((file) => {
       const previous = previousFiles.find((f) => f.path === file.path);
       return previous
@@ -316,7 +336,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const updated = {
       ...currentProject,
       workspaceRoot: root ?? currentProject.workspaceRoot,
-      projectMap: { ...currentProject.projectMap, files: merged }
+      projectMap: { ...map, files: merged }
     };
 
     setCurrentProject(updated);
@@ -352,7 +372,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const updated = {
       ...currentProject,
-      projectMap: { ...currentProject.projectMap, insights }
+      projectMap: { ...projectMapOf(currentProject), insights }
     };
 
     setCurrentProject(updated);
@@ -511,7 +531,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
           title,
           goal,
           status: 'ready' as TaskStatus,
-          relevantFiles: currentProject.projectMap.files.slice(0, 2).map((f) => f.path),
+          relevantFiles: (currentProject.projectMap?.files || []).slice(0, 2).map((f) => f.path),
           acceptanceCriteria: [
             { id: `ac_1`, description: 'Code compiles without syntax errors', passed: false },
             { id: `ac_2`, description: 'Requested feature functionality verified', passed: false }

@@ -411,6 +411,72 @@ describe('The prompt sent to the reviewer', () => {
   });
 });
 
+describe('The checks the app ran, in front of the reviewer', () => {
+  const evidence = {
+    ranAt: '2026-10-18T10:00:00.000Z',
+    ok: false,
+    passed: 1,
+    failed: 1,
+    lines: [
+      {
+        id: 'typecheck:tsc',
+        label: 'Проверка типов',
+        status: 'failed' as const,
+        commandLine: 'node node_modules/typescript/bin/tsc --noEmit --pretty false',
+        durationMs: 2100,
+        problems: ['src/App.tsx:12:5 TS2322 Type \u0027string\u0027 is not assignable to \u0027number\u0027'],
+        problemCount: 7
+      },
+      {
+        id: 'test:vitest',
+        label: 'Тесты',
+        status: 'passed' as const,
+        commandLine: 'node node_modules/vitest/vitest.mjs run --reporter basic',
+        durationMs: 3400,
+        problems: [],
+        problemCount: 0
+      }
+    ]
+  };
+
+  it('10a. says which commands already ran, and forbids asking for them again', () => {
+    const prompt = buildReviewPromptText(reviewInput({ checkEvidence: evidence }));
+
+    expect(prompt).toContain('## Проверки на диске (запущено приложением)');
+    expect(prompt).toContain('node node_modules/typescript/bin/tsc --noEmit --pretty false');
+    expect(prompt).toContain('Проверка типов');
+    expect(prompt).toContain('упала');
+    expect(prompt).toContain('src/App.tsx:12:5 TS2322');
+    // A long list is cut with the number kept, so the reviewer knows how much it does not see.
+    expect(prompt).toContain('и ещё 6');
+    expect(prompt).toContain('Не проси выполнить установку, проверку типов, тесты или сборку');
+    expect(prompt).toContain('8. Никогда не поручай запускать команды');
+  });
+
+  it('10b. an all-green run is stated as done work, not as a thing to do', () => {
+    const green = { ...evidence, ok: true, passed: 2, failed: 0, lines: evidence.lines.map((line) => ({ ...line, status: 'passed' as const, problems: [], problemCount: 0 })) };
+    const prompt = buildReviewPromptText(reviewInput({ checkEvidence: green }));
+
+    expect(prompt).toContain('уже выполнены на компьютере пользователя, и всё, что в этой папке можно было проверить, прошло');
+    expect(prompt).not.toContain('Проваленная проверка');
+  });
+
+  it('10c. without a run the reviewer is told so, and is forbidden to invent one', () => {
+    const prompt = buildReviewPromptText(reviewInput({ checkEvidence: null }));
+
+    expect(prompt).toContain('Приложение не запускало проверки этого проекта');
+    expect(prompt).toContain('Не выдумывай их результат');
+  });
+
+  it('10d. the English brief carries the same section and the same rule', () => {
+    const prompt = buildReviewPromptText(reviewInput({ isRu: false, checkEvidence: evidence }));
+
+    expect(prompt).toContain('## Checks on disk (run by the app)');
+    expect(prompt).toContain('8. Never hand commands');
+    expect(prompt).toContain('failed');
+  });
+});
+
 describe('The continuation prompt written without a provider', () => {
   it('11. names the attempt, asks for complete files and forbids claiming checks that never ran', () => {
     const prompt = buildContinuationPromptText({

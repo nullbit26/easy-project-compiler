@@ -1,5 +1,6 @@
 import { ProjectBrief, ArchitectureProposal, ProjectPhase, ProjectMap, CompiledPrompt, SessionReview, ErrorDiagnosis, ProjectFile, FileInsights, WorkspaceFacts } from '../types';
 import type { RulesContent } from '../utils/rulesFiles';
+import type { CheckEvidence } from '../utils/checkEvidence';
 import { trackAiRequest } from './aiActivity';
 import { notifyWorkspaceBatchWritten } from './rulesWatch';
 
@@ -25,6 +26,14 @@ async function handleResponse<T>(res: Response): Promise<T> {
     );
   }
   const json = await res.json();
+  /*
+   * Which engine answered rides on the envelope, next to `data`, because it describes the request,
+   * not the result. It used to be dropped here, so a prompt or a verdict written by the offline rule
+   * engine arrived at the screen looking exactly like one a model wrote.
+   */
+  if (json && json.engine && json.data && typeof json.data === 'object') {
+    return { ...json.data, engine: json.engine } as T;
+  }
   return json.data as T;
 }
 
@@ -269,6 +278,14 @@ export async function reviewSessionApi(params: {
   projectMap: ProjectMap;
   stepNumber?: number;
   previousHistory?: any[];
+  /**
+   * What the app's own run of the folder's commands found, when it has run them.
+   *
+   * The reviewer needs it for the same reason a person does: "the code you pasted looks complete"
+   * and "the folder compiles" are different claims, and only one of them is measured. It also stops
+   * the verdict from asking the user to run `npm install` and `tsc` — commands the app runs itself.
+   */
+  checkEvidence?: CheckEvidence | null;
   /** The project's working mode: it shapes the wording of the verdict, not its strictness. */
   skillLevel?: string;
   language?: string;
@@ -815,6 +832,159 @@ function announceWrittenBatch(kind: 'apply' | 'undo', result: ApplyChangesResult
     applied: result.applied,
     paths: (result.results || []).map((entry) => entry.path)
   });
+}
+
+/*
+ * The autonomous coding loop — /api/autonomous/start, /stream, /status
+ * Local only: one run at a time on the server, its progress read over SSE.
+ */
+
+export type AutonomousEventType =
+  | 'run_started'
+  | 'attempt_started'
+  | 'proposal_summary'
+  | 'files_written'
+  | 'formatting'
+  | 'verifying'
+  | 'verdict'
+  | 'repairing'
+  | 'attempt_failed'
+  | 'run_completed'
+  | 'run_failed';
+
+export interface AutonomousEvent {
+  runId: string;
+  seq: number;
+  type: AutonomousEventType;
+  at: string;
+  attempt?: number;
+  maxAttempts?: number;
+  text: string;
+  detail?: Record<string, unknown>;
+}
+
+export interface AutonomousRunHandle {
+  runId: string | null;
+  events: AutonomousEvent[];
+  /** The terminal event, when the stream has already delivered it. */
+  ended: boolean;
+}
+
+export async function startAutonomousRunApi(params: {
+  taskTitle: string;
+  goal?: string;
+  acceptanceCriteria?: string[];
+  targetFiles?: string[];
+  projectName?: string;
+  projectType?: string;
+  engineOrFramework?: string;
+  language?: string;
+}): Promise<{ started: boolean; runId: string; maxAttempts: number }> {
+  const res = await fetch('/api/autonomous/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
+  });
+  return handleResponse<{ started: boolean; runId: string; maxAttempts: number }>(res);
+}
+
+/**
+ * Opens the run's SSE stream. The server replays everything that already happened, so a
+ * reconnecting watcher picks the run up mid-flight; the promise resolves when the run ends.
+ */
+export function streamAutonomousRun(
+  runId: string,
+  onEvent: (event: AutonomousEvent) => void
+): { close: () => void; done: Promise<void> } {
+  const source = new EventSource(`/api/autonomous/stream?runId=${encodeURIComponent(runId)}`);
+  const closed = () => source.close();
+
+  const done = new Promise<void>((resolve) => {
+    const onAny = (raw: MessageEvent) => {
+      try {
+        const event = JSON.parse((raw as MessageEvent).data) as AutonomousEvent;
+        onEvent(event);
+        if (event.type === 'run_completed' || event.type === 'run_failed') {
+          source.close();
+          resolve();
+        }
+      } catch {
+        /* a malformed frame is skipped, the stream itself stays */
+      }
+    };
+    for (const type of [
+      'run_started',
+      'attempt_started',
+      'proposal_summary',
+      'files_written',
+      'formatting',
+      'verifying',
+      'verdict',
+      'repairing',
+      'attempt_failed',
+      'run_completed',
+      'run_failed'
+    ]) {
+      source.addEventListener(type, onAny as EventListener);
+    }
+    source.addEventListener('stream_end', () => {
+      source.close();
+      resolve();
+    });
+    source.onerror = () => {
+      /* EventSource retries on its own; nothing to do here */
+    };
+  });
+
+  return { close: closed, done };
+}
+
+/*
+ * The task pipeline — /api/autonomous/pipeline
+ * A queue of plan tasks, run back to back; each verdict lands as a pipeline_task_done event.
+ */
+
+export interface PipelineTaskInput {
+  id: string;
+  title: string;
+  goal?: string;
+  acceptanceCriteria?: string[];
+  targetFiles?: string[];
+  dependencies?: string[];
+}
+
+export interface PipelineTaskDone {
+  taskId: string;
+  taskTitle: string;
+  result: 'completed' | 'failed';
+  done: number;
+  total: number;
+}
+
+export interface PipelineRunRecord {
+  runId: string;
+  tasks: Array<PipelineTaskDone & { attempts: number; verdict: 'pass' | 'fail' | 'none' }>;
+  stoppedBecause: 'queue_empty' | 'task_failed' | 'no_workspace' | 'no_ai_key';
+}
+
+export async function startPipelineApi(params: {
+  tasks: PipelineTaskInput[];
+  projectName?: string;
+  projectType?: string;
+  engineOrFramework?: string;
+  language?: string;
+}): Promise<{ started: boolean; runId: string; queued: number }> {
+  const res = await fetch('/api/autonomous/pipeline', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
+  });
+  return handleResponse<{ started: boolean; runId: string; queued: number }>(res);
+}
+
+export async function fetchPipelineResultApi(runId: string): Promise<PipelineRunRecord> {
+  const res = await fetch(`/api/autonomous/pipeline/${encodeURIComponent(runId)}`);
+  return handleResponse<PipelineRunRecord>(res);
 }
 
 /*

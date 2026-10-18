@@ -461,7 +461,7 @@ const PLAIN_PLAN_VOICE: Record<Lang, Omit<OfflinePlanVoice, 'plain'>> = {
   ru: {
     planNote: 'шаги выполняет ИИ-агент, вам остаётся проверять результат',
     testingStrategy:
-      'Проверяем вручную: вы открываете проект и убеждаетесь, что всё работает. Автотесты на новую логику пишет и запускает ИИ-агент — в терминале вам ничего вводить не нужно.',
+      'Проверяем вручную: вы открываете проект и убеждаетесь, что всё работает. Сборку и проверку типов приложение запускает само — в терминале вам ничего вводить не нужно.',
     clarifyingQuestions: [
       'Что должно происходить при самом первом запуске, чтобы это было понятно человеку?',
       'Что важнее сделать в первую очередь, если времени мало?'
@@ -471,7 +471,7 @@ const PLAIN_PLAN_VOICE: Record<Lang, Omit<OfflinePlanVoice, 'plain'>> = {
   en: {
     planNote: 'your AI agent does the steps, you check the result',
     testingStrategy:
-      'Checked by hand: you open the project and see it working. The AI agent writes and runs the automated tests for the new logic — you type nothing in a terminal.',
+      'Checked by hand: you open the project and see it working. The app runs the build and the type check itself — you type nothing in a terminal.',
     clarifyingQuestions: [
       'What should happen on the very first run for a person to understand it?',
       'If time is short, what has to be built first?'
@@ -486,7 +486,7 @@ const TECHNICAL_PLAN_VOICE: Record<Lang, Omit<OfflinePlanVoice, 'plain'>> = {
     testingStrategy: 'Модульное тестирование переходов стейта и граничных случаев',
     clarifyingQuestions: [
       'Целевая среда исполнения: браузер или standalone-сборка?',
-      'Нужны ли звуковые эффекты и синтез озвучки, или достаточно визуального отклика?'
+      'Где должны жить данные — в браузере пользователя или на сервере, и нужен ли вход в аккаунт?'
     ],
     manualCheck: (criterion) => `Ручная проверка: ${criterion}`
   },
@@ -495,14 +495,43 @@ const TECHNICAL_PLAN_VOICE: Record<Lang, Omit<OfflinePlanVoice, 'plain'>> = {
     testingStrategy: 'Unit tests for state transitions and edge cases',
     clarifyingQuestions: [
       'Target runtime: browser or a standalone build?',
-      'Are sound effects and audio synthesis required, or is the visual response enough?'
+      'Where should the data live — in the user\u2019s browser or on a server, and is signing in required?'
     ],
     manualCheck: (criterion) => `Manual check: ${criterion}`
   }
 };
 
-export function offlinePlanVoice(level: string | undefined | null, isRu: boolean): OfflinePlanVoice {
+/**
+ * The two questions a game is actually asked at a technical level.
+ *
+ * They used to live inside the technical voice itself, so a to-do app at Средний/Продвинутый was
+ * asked whether it needed sound effects and voice synthesis — a question from another product, in
+ * the middle of a wizard the user had no way to answer. The app questions stay in the voice; only the
+ * game overrides them.
+ */
+const TECHNICAL_GAME_QUESTIONS: Record<Lang, string[]> = {
+  ru: [
+    'Как игрок управляет персонажем или объектами: мышь, клавиатура или касания?',
+    'По какому условию игра заканчивается — время, очки или оставшиеся жизни?'
+  ],
+  en: [
+    'How does the player control the character or the objects: mouse, keyboard, or touch?',
+    'What ends the game — a timer, points, or lives left?'
+  ]
+};
+
+export function offlinePlanVoice(
+  level: string | undefined | null,
+  isRu: boolean,
+  isGame = false
+): OfflinePlanVoice {
   const plain = levelVoice(level) === 'plain';
   const source = plain ? PLAIN_PLAN_VOICE : TECHNICAL_PLAN_VOICE;
-  return { plain, ...(isRu ? source.ru : source.en) };
+  const voice = isRu ? source.ru : source.en;
+  const lang: Lang = isRu ? 'ru' : 'en';
+  return {
+    plain,
+    ...voice,
+    clarifyingQuestions: !plain && isGame ? TECHNICAL_GAME_QUESTIONS[lang] : voice.clarifyingQuestions
+  };
 }

@@ -467,6 +467,7 @@ Scope instructions based on MVP Depth ("${mvpDepth || 'Production MVP'}"):
 - "Scalable Enterprise": Generate 4-5 phases, 10-12 tasks total including CI/CD, unit tests, security guards, and docs.
 
 Important: Name phases cleanly (e.g. "Setup & Foundation", "Core Mechanics", "Polish & Testing") without doubling the words "Phase 0" inside the title!
+Dependencies: a task's dependencies must be the exact titles of other tasks in this same plan, copied character for character (the example below depends on the earlier task by name). Use [] when a task needs nothing. The app assigns task ids after you answer, so a positional name such as "0_1" points at nothing and is reported on the board as a broken link.
 
 Respond in clean JSON with the following structure:
 {
@@ -524,7 +525,7 @@ Respond in clean JSON with the following structure:
           "acceptanceCriteria": ["User actions trigger state changes", "Interactive controls handle inputs cleanly"],
           "testRequirements": ["Verify input handling"],
           "estimatedComplexity": "Medium (2 prompts)",
-          "dependencies": ["0_0"]
+          "dependencies": ["Initialize project structure & state provider"]
         }
       ]
     },
@@ -541,7 +542,7 @@ Respond in clean JSON with the following structure:
           "acceptanceCriteria": ["Zero console errors", "Full user flow tested"],
           "testRequirements": ["Full flow test"],
           "estimatedComplexity": "Small (1 prompt)",
-          "dependencies": ["1_0"]
+          "dependencies": ["Build interactive core mechanics"]
         }
       ]
     }
@@ -609,7 +610,7 @@ Respond in clean JSON with the following structure:
     // The level decides how the plan is worded, never what it demands: the phases, tasks, criteria and
     // technical test requirements below are identical for every level, and the plain voice only adds a
     // no-terminal way to check each task next to them.
-    const planVoice = offlinePlanVoice(skillLevel, isRu);
+    const planVoice = offlinePlanVoice(skillLevel, isRu, isGame);
     const withPlainChecks = (phases: any[]) =>
       planVoice.plain
         ? phases.map((phase) => ({
@@ -712,7 +713,7 @@ Respond in clean JSON with the following structure:
                       : ['User actions respond immediately', 'State updates cleanly'],
                     testRequirements: [isRu ? 'Проверка обработки пользовательского ввода' : 'Verify user input handling'],
                     estimatedComplexity: 'Small (1 prompt)',
-                    dependencies: ['0_0']
+                    dependencies: ['task_0_0']
                   }
                 ]
               }
@@ -749,7 +750,7 @@ Respond in clean JSON with the following structure:
                     acceptanceCriteria: isRu ? ['Доменная логика изолирована', 'Отсутствует жесткая связанность'] : ['Domain logic isolated', 'Zero tight coupling'],
                     testRequirements: [isRu ? 'Модульные тесты сервисов' : 'Unit test domain services'],
                     estimatedComplexity: 'Medium (2 prompts)',
-                    dependencies: ['0_0']
+                    dependencies: ['task_0_0']
                   }
                 ]
               },
@@ -766,7 +767,7 @@ Respond in clean JSON with the following structure:
                     acceptanceCriteria: isRu ? ['Тесты успешно выполняются', 'Исключения перехватываются безопасно'] : ['Unit and integration tests pass', 'Error boundaries catch exceptions'],
                     testRequirements: [isRu ? 'Запуск автоматизированных тестов' : 'Run automated test suite'],
                     estimatedComplexity: 'Medium (2 prompts)',
-                    dependencies: ['1_0']
+                    dependencies: ['task_1_0']
                   }
                 ]
               },
@@ -783,7 +784,7 @@ Respond in clean JSON with the following structure:
                     acceptanceCriteria: isRu ? ['Чистая сборка без предупреждений', 'Аудит бандла завершен'] : ['Clean production build', 'Audited bundle output'],
                     testRequirements: [isRu ? 'Проверка сборки и бандла' : 'Build & bundle check'],
                     estimatedComplexity: 'Small (1 prompt)',
-                    dependencies: ['2_0']
+                    dependencies: ['task_2_0']
                   }
                 ]
               }
@@ -823,7 +824,7 @@ Respond in clean JSON with the following structure:
                       : ['User actions trigger responsive animations and state changes', 'All interactive controls handle inputs cleanly'],
                     testRequirements: [isRu ? 'Проверка смены состояния от пользовательского ввода' : 'Verify user input state transitions'],
                     estimatedComplexity: 'Medium (2 prompts)',
-                    dependencies: ['0_0']
+                    dependencies: ['task_0_0']
                   }
                 ]
               },
@@ -842,7 +843,7 @@ Respond in clean JSON with the following structure:
                       : ['Zero console errors or unhandled exceptions', 'Full user flow complete'],
                     testRequirements: [isRu ? 'Запуск полного сценария пользователя' : 'Run complete user flow test'],
                     estimatedComplexity: 'Small (1 prompt)',
-                    dependencies: ['1_0']
+                    dependencies: ['task_1_0']
                   }
                 ]
               }
@@ -1208,6 +1209,7 @@ Current Phases: ${JSON.stringify(
       )}
 
 Generate a clean updated set of phases and tasks. Keep titles clean (no doubling "Phase 1: Phase 1").
+Dependencies: name the tasks a task waits for by their exact titles in this same answer, copied character for character. Use [] when nothing is needed. Ids are assigned by the app afterwards, so a positional name such as "0_1" would name no task.
 
 Respond ONLY in valid JSON:
 {

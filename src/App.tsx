@@ -193,6 +193,14 @@ function AppContent() {
               setCompilerTaskTitle(taskTitle);
               navigate('/compiler');
             }}
+            /*
+             * A task waiting for a verdict is opened in the review, on that task: the dashboard's
+             * sentence says "paste the answer", and this is the screen that takes it.
+             */
+            onReviewTask={(taskTitle) => {
+              setReviewTaskHint({ title: taskTitle, acceptanceCriteria: [] });
+              navigate('/review');
+            }}
             onOpenNewProjectModal={() => setShowSetupModal(true)}
           />
         );
@@ -310,6 +318,22 @@ function AppContent() {
             onAdaptProjectPhases={onAdaptProjectPhases}
             onOpenNewProjectModal={() => setShowSetupModal(true)}
             onSwitchToKanban={() => setPlanView('kanban')}
+            /* The pipeline's verdicts are the one way a task turns done without a click: what
+               the server's checks said is what the plan now says. */
+            onPipelineTaskDone={(taskId, result) => {
+              const ru = language !== 'en';
+              onUpdateTaskStatus(
+                taskId,
+                result === 'completed' ? 'completed' : 'blocked',
+                result === 'completed'
+                  ? ru
+                    ? 'Задача выполнена автокодингом: проверки проекта прошли.'
+                    : 'Task completed by auto-code: project checks passed.'
+                  : ru
+                  ? 'Автокодинг не смог выполнить задачу: нужны ручные правки.'
+                  : 'Auto-code could not finish this task; fix it by hand.'
+              );
+            }}
           />
         ) : (
           <PlanKanban
