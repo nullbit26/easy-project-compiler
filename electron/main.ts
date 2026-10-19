@@ -715,6 +715,7 @@ const LAYOUT_PROBE = `(() => {
     viewport: { w: window.innerWidth, h: window.innerHeight },
     titleBar: box(bar),
     titleBarText: text(bar),
+    brandText: text(document.querySelector('[data-testid="app-brand"]')),
     titleBarRegion: bar ? bar.getAttribute('style') || '' : '',
     controls,
     bridge: bridge
@@ -778,12 +779,28 @@ async function checkWindowChrome(win: BrowserWindow): Promise<void> {
   const controls = layout.controls ?? {};
   const names = ['minimize', 'maximize', 'close'];
 
+  const column = layout.sidebar;
   check(
-    'the app draws its own title bar at the top of the window',
-    Boolean(bar) && bar.y === 0 && bar.h >= 28 && bar.h <= 48 && bar.w === layout.viewport.w,
-    JSON.stringify(bar)
+    'the sidebar is the window’s full-height column',
+    Boolean(column) && column.y === 0 && column.h === layout.viewport.h,
+    JSON.stringify(column)
   );
-  check('the title bar names the app', String(layout.titleBarText).includes(APP_NAME), String(layout.titleBarText).slice(0, 80));
+  check(
+    'the app names itself at the top of the sidebar',
+    String(layout.brandText).includes(APP_NAME),
+    String(layout.brandText).slice(0, 80)
+  );
+  check(
+    'the title bar begins where the sidebar ends',
+    Boolean(bar) &&
+      Boolean(column) &&
+      bar.y === 0 &&
+      bar.h >= 28 &&
+      bar.h <= 48 &&
+      bar.x === column.x + column.w &&
+      bar.w === layout.viewport.w - column.w,
+    JSON.stringify({ bar, column })
+  );
   check(
     'the title bar is the window’s drag handle',
     /app-region/i.test(String(layout.titleBarRegion)),
@@ -844,9 +861,9 @@ async function checkWindowChrome(win: BrowserWindow): Promise<void> {
   report.facts.footerText = footerText;
   check('the sidebar footer names the build the app is running', String(footerText).includes(BUILD_ID), String(footerText).slice(0, 120));
   check(
-    'the build id is not repeated in the title bar',
-    !String(layout.titleBarText).includes(BUILD_ID),
-    String(layout.titleBarText).slice(0, 80)
+    'the build id is not repeated above the footer',
+    !String(layout.titleBarText).includes(BUILD_ID) && !String(layout.brandText).includes(BUILD_ID),
+    String(layout.brandText).slice(0, 80)
   );
 
   /*

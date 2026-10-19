@@ -1,21 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  Settings,
-  ShieldCheck,
-  ShieldAlert,
-  Loader2,
-  Info,
-  KeyRound,
-  Eye,
-  EyeOff,
-  Trash2,
-  PlugZap,
-  ExternalLink,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle
-} from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Eye, EyeOff, Loader2, Pencil, RefreshCw, Trash2, X, AlertTriangle } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { IconButton } from './ui/Button';
 
 /** Provider ids come from the server (server/store/apiKeyStore.ts); the panel stays id-agnostic. */
 type ProviderId = string;
@@ -46,11 +32,20 @@ interface TestResult {
   message: string;
 }
 
-type Action = 'save' | 'test' | 'remove';
+type Action = 'test' | 'remove';
 
-// Drafts are keyed by whatever provider ids the server reports, so adding a provider
-// on the backend never requires touching this component.
-
+/**
+ * API keys: a list, not a form.
+ *
+ * The panel used to be six little forms — a field, a Save button and a badge per provider — and
+ * the saved ones were the worst: a masked value, then an empty field asking to replace it, then
+ * three buttons. What is left is the shape of a settings list in an editor: one row per provider,
+ * the state where the field would be, and the actions where the state ends. A key is written the
+ * moment the field is left (or Enter is pressed); there is no Save button to forget to press.
+ *
+ * The saved row collapses to its mask: the field only exists while it is being filled in, which is
+ * what keeps a provider who is already set up from taking twice the height of one who is not.
+ */
 export const ApiSettingsPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { language, t } = useLanguage();
   const s = t.apiSettings;
@@ -60,6 +55,10 @@ export const ApiSettingsPanel: React.FC<{ onClose: () => void }> = ({ onClose })
   const [loadError, setLoadError] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [visible, setVisible] = useState<Record<string, boolean>>({});
+  const [editingId, setEditingId] = useState<ProviderId | null>(null);
+  const [savingId, setSavingId] = useState<ProviderId | null>(null);
+  /** The same fact as `savingId`, read synchronously: Enter saves and the blur right after it must not. */
+  const savingRef = useRef<ProviderId | null>(null);
   const [busy, setBusy] = useState<{ provider: ProviderId; action: Action } | null>(null);
   const [notice, setNotice] = useState<{ provider: ProviderId; kind: 'ok' | 'error'; text: string } | null>(null);
 
@@ -83,11 +82,18 @@ export const ApiSettingsPanel: React.FC<{ onClose: () => void }> = ({ onClose })
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape') return;
+      // Escape first steps out of a key field; the next one closes the panel.
+      if (editingId) {
+        setEditingId(null);
+        setDrafts((prev) => ({ ...prev, [editingId]: '' }));
+        return;
+      }
+      onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [editingId, onClose]);
 
   const localizeReason = (reason: string): string => {
     switch (reason) {
@@ -132,17 +138,32 @@ export const ApiSettingsPanel: React.FC<{ onClose: () => void }> = ({ onClose })
     return json.data as StatusPayload;
   };
 
-  const handleSave = async (provider: ProviderId) => {
-    setBusy({ provider, action: 'save' });
+  /**
+   * Writes the field the moment it loses focus. An empty field is not an error: leaving it means
+   * "not now", so the row simply returns to its mask. The busy guard matters because Enter saves
+   * and the blur that follows must not write the same key twice.
+   */
+  const commitKey = async (provider: ProviderStatus) => {
+    if (savingRef.current === provider.id || busy?.provider === provider.id) return;
+    const key = (drafts[provider.id] ?? '').trim();
+    if (!key) {
+      if (editingId === provider.id) setEditingId(null);
+      setDrafts((prev) => ({ ...prev, [provider.id]: '' }));
+      return;
+    }
+
+    savingRef.current = provider.id;
+    setSavingId(provider.id);
     setNotice(null);
     try {
-      await mutate(provider, 'PUT', drafts[provider] ?? '');
-      setDrafts((prev) => ({ ...prev, [provider]: '' }));
-      setNotice({ provider, kind: 'ok', text: s.savedKey });
+      await mutate(provider.id, 'PUT', key);
+      setDrafts((prev) => ({ ...prev, [provider.id]: '' }));
+      setEditingId(null);
     } catch (err: any) {
-      setNotice({ provider, kind: 'error', text: err?.message || s.saveFailed });
+      setNotice({ provider: provider.id, kind: 'error', text: err?.message || s.saveFailed });
     } finally {
-      setBusy(null);
+      savingRef.current = null;
+      setSavingId(null);
     }
   };
 
@@ -151,7 +172,8 @@ export const ApiSettingsPanel: React.FC<{ onClose: () => void }> = ({ onClose })
     setNotice(null);
     try {
       await mutate(provider, 'DELETE');
-      setNotice({ provider, kind: 'ok', text: s.removedKey });
+      setDrafts((prev) => ({ ...prev, [provider]: '' }));
+      setEditingId(null);
     } catch (err: any) {
       setNotice({ provider, kind: 'error', text: err?.message || s.saveFailed });
     } finally {
@@ -196,212 +218,206 @@ export const ApiSettingsPanel: React.FC<{ onClose: () => void }> = ({ onClose })
         role="dialog"
         aria-modal="true"
         aria-labelledby="api-settings-dialog-title"
-        className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-5 shadow-2xl"
+        className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 id="api-settings-dialog-title" className="text-lg font-bold text-white flex items-center gap-2">
-              <Settings className="w-5 h-5 text-indigo-400" />
-              {s.title}
-            </h2>
-            <p className="text-xs text-slate-400 mt-1">{s.subtitle}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 cursor-pointer"
-            aria-label={t.common.close}
-          >
-            ✕
-          </button>
+        <div className="flex items-center justify-between gap-4 px-5 pb-1 pt-4">
+          <h2 id="api-settings-dialog-title" className="text-[15px] font-semibold text-slate-100">
+            {s.title}
+          </h2>
+          <IconButton label={t.common.close} icon={X} size="sm" onClick={onClose} />
         </div>
 
-        {/* Active provider summary */}
-        <div className="flex items-center gap-2 text-xs bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
-          <PlugZap className={`w-4 h-4 shrink-0 ${activeName ? 'text-emerald-400' : 'text-slate-400'}`} />
-          <span className="text-slate-400 font-medium">{s.activeProvider}:</span>
-          <span className={`font-bold ${activeName ? 'text-emerald-300' : 'text-slate-300'}`}>
-            {activeName || s.noProvider}
-          </span>
+        <p className="px-5 pb-3 text-[11px] text-slate-400">
+          {s.activeProvider}: <span className="text-slate-300">{activeName || s.noProvider}</span>
           {activeName && payload?.lastModel && (
-            <span className="text-slate-400 ml-auto font-mono text-[11px]">{payload.lastModel}</span>
+            <span className="ml-2 font-mono text-[11px] text-slate-400">{payload.lastModel}</span>
           )}
-        </div>
+        </p>
 
         {loading ? (
-          <div className="flex justify-center p-10">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+          <div className="flex justify-center py-10">
+            <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
           </div>
         ) : loadError || !payload ? (
-          <div className="flex items-center justify-between gap-3 bg-rose-950/30 border border-rose-500/30 p-4 rounded-xl text-xs text-rose-200">
+          <div className="mx-5 mb-5 flex items-center gap-3 text-xs text-slate-300">
             <span>{s.loadFailed}</span>
             <button
+              type="button"
               onClick={load}
-              className="font-bold bg-rose-600/30 hover:bg-rose-600/50 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+              className="rounded-md px-2 py-1 text-[11px] text-indigo-300 transition-colors hover:bg-indigo-500/10 hover:text-indigo-200"
             >
               {s.retry}
             </button>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div>
             {payload.providers.map((provider) => {
               const name = language === 'ru' ? provider.labelRu : provider.labelEn;
               const rowBusy = busy?.provider === provider.id ? busy.action : null;
               const rowNotice = notice?.provider === provider.id ? notice : null;
+              const isSaving = savingId === provider.id;
               const draft = drafts[provider.id] ?? '';
+              const isEditing = !provider.configured || editingId === provider.id;
               const isVisible = Boolean(visible[provider.id]);
-              const canSave = draft.trim().length > 0 && !rowBusy;
+              const disabled = isSaving || Boolean(rowBusy);
 
               return (
-                <div key={provider.id} className="p-4 bg-slate-950/60 rounded-xl space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <KeyRound className="w-4 h-4 text-indigo-400 shrink-0" />
-                      <span className="font-bold text-sm text-slate-200 truncate">{name}</span>
+                <div key={provider.id} className="border-b border-slate-800/60 px-5 py-2.5 last:border-b-0">
+                  {/* Fixed side columns, so the mask and every field start on the same x in every
+                      row; the status is the last cell, which puts all of them on one right edge. */}
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[13rem_minmax(0,1fr)_11.5rem] sm:items-center sm:gap-4">
+                    {/* Provider and the way to its dashboard, on one line so a row stays a row. */}
+                    <div className="flex min-w-0 items-baseline gap-2">
+                      <span className="truncate text-[13px] font-medium text-slate-200">{name}</span>
                       <a
                         href={provider.keyUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 shrink-0"
+                        className="shrink-0 whitespace-nowrap text-[11px] text-slate-400 transition-colors hover:text-indigo-300"
                       >
                         {s.getKey}
-                        <ExternalLink className="w-3 h-3" />
                       </a>
                     </div>
 
-                    {provider.configured ? (
-                      <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 shrink-0">
-                        <ShieldCheck className="w-4 h-4" />
-                        {provider.source === 'app' ? s.fromApp : s.fromEnv}
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs font-bold text-rose-400 shrink-0">
-                        <ShieldAlert className="w-4 h-4" />
-                        {s.notConfigured}
-                      </span>
-                    )}
-                  </div>
-
-                  {provider.configured && (
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-                      <span className="font-mono bg-slate-800/50 rounded px-2 py-0.5">{provider.masked}</span>
-                      <span className="font-mono text-slate-400">{provider.envVar}</span>
-                      {provider.prefixWarning && (
-                        <span className="flex items-center gap-1 text-amber-400">
-                          <AlertTriangle className="w-3 h-3" />
-                          {s.prefixWarning}
+                    {/* The field exists only while a key is being typed; a saved row shows its mask. */}
+                    {isEditing ? (
+                      <div className="relative">
+                        <input
+                          type={isVisible ? 'text' : 'password'}
+                          value={draft}
+                          autoFocus={editingId === provider.id}
+                          autoComplete="off"
+                          spellCheck={false}
+                          disabled={isSaving}
+                          onChange={(event) => setDrafts((prev) => ({ ...prev, [provider.id]: event.target.value }))}
+                          onPaste={(event) => {
+                            // Dashboards copy keys with stray spaces and newlines — clean them up front.
+                            const pasted = event.clipboardData.getData('text');
+                            event.preventDefault();
+                            const cleaned = pasted.replace(/\s+/g, '');
+                            setDrafts((prev) => ({ ...prev, [provider.id]: cleaned }));
+                          }}
+                          onBlur={() => commitKey(provider)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              commitKey(provider);
+                            }
+                          }}
+                          placeholder={provider.configured ? s.keyPlaceholderReplace : s.keyPlaceholder}
+                          /*
+                            The rows look alike and their fields look alike: without this, a screen
+                            reader announces the same placeholder for every provider and the user
+                            cannot tell whose key is being asked for.
+                          */
+                          aria-label={`${s.keyLabel}: ${name}`}
+                          className="h-8 w-full rounded-md border border-slate-800 bg-slate-950 pl-2.5 pr-8 font-mono text-xs text-slate-100 placeholder:text-slate-400 focus:border-indigo-400/60 focus:outline-none disabled:opacity-60"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2">
+                          {isSaving ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />
+                          ) : (
+                            <button
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => setVisible((prev) => ({ ...prev, [provider.id]: !prev[provider.id] }))}
+                              className="cursor-pointer text-slate-500 transition-colors hover:text-slate-300"
+                              title={isVisible ? s.hide : s.show}
+                              aria-label={`${isVisible ? s.hide : s.show}: ${name}`}
+                            >
+                              {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
                         </span>
+                      </div>
+                    ) : (
+                      <div className="flex min-w-0 items-center gap-1.5" title={provider.envVar}>
+                        <span className="truncate font-mono text-xs text-slate-300">{provider.masked}</span>
+                        {provider.prefixWarning && (
+                          <AlertTriangle className="h-3 w-3 shrink-0 text-amber-400" aria-label={s.prefixWarning} />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Actions in the right column, state on its far edge. */}
+                    <div className="flex items-center justify-end gap-1">
+                      {provider.configured && !isEditing && (
+                        <div className="flex items-center">
+                          <IconButton
+                            size="xs"
+                            variant="ghost"
+                            label={`${s.testKey}: ${name}`}
+                            icon={RefreshCw}
+                            disabled={disabled}
+                            onClick={() => handleTest(provider.id)}
+                          />
+                          <IconButton
+                            size="xs"
+                            variant="ghost"
+                            label={`${s.editKey}: ${name}`}
+                            icon={Pencil}
+                            disabled={disabled}
+                            onClick={() => {
+                              setNotice(null);
+                              setDrafts((prev) => ({ ...prev, [provider.id]: '' }));
+                              setEditingId(provider.id);
+                            }}
+                          />
+                          {provider.source === 'app' && (
+                            <IconButton
+                              size="xs"
+                              variant="ghost"
+                              label={`${s.removeKey}: ${name}`}
+                              icon={Trash2}
+                              disabled={disabled}
+                              className="text-rose-300 enabled:hover:bg-rose-500/10 enabled:hover:text-rose-200"
+                              onClick={() => handleRemove(provider.id)}
+                            />
+                          )}
+                        </div>
                       )}
-                    </div>
-                  )}
 
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type={isVisible ? 'text' : 'password'}
-                        value={draft}
-                        autoComplete="off"
-                        spellCheck={false}
-                        onChange={(event) => setDrafts((prev) => ({ ...prev, [provider.id]: event.target.value }))}
-                        onPaste={(event) => {
-                          // Dashboards copy keys with stray spaces and newlines — clean them up front.
-                          const pasted = event.clipboardData.getData('text');
-                          event.preventDefault();
-                          const cleaned = pasted.replace(/\s+/g, '');
-                          setDrafts((prev) => ({ ...prev, [provider.id]: cleaned }));
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' && canSave) handleSave(provider.id);
-                        }}
-                        placeholder={provider.configured ? s.keyPlaceholderReplace : s.keyPlaceholder}
-                        /*
-                          The four rows look alike and their fields look alike: without this, a screen
-                          reader announces "Вставьте ключ API" four times and the user cannot tell whose
-                          key is being asked for. A placeholder is not a label — it is gone as soon as
-                          there is a value to read.
-                        */
-                        aria-label={`${s.keyLabel}: ${name}`}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-3 pr-9 py-2 text-sm text-slate-100 placeholder-slate-400 focus:border-indigo-500 font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setVisible((prev) => ({ ...prev, [provider.id]: !prev[provider.id] }))}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300 cursor-pointer"
-                        title={isVisible ? s.hide : s.show}
-                        aria-label={`${isVisible ? s.hide : s.show}: ${name}`}
+                      <span
+                        className={`ml-1 flex items-center gap-1.5 whitespace-nowrap text-[11px] ${
+                          provider.configured ? 'text-emerald-300/90' : 'text-slate-400'
+                        }`}
+                        aria-live="polite"
                       >
-                        {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleSave(provider.id)}
-                        disabled={!canSave}
-                        className="flex items-center gap-1.5 bg-indigo-600 enabled:hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs px-3 py-2 rounded-lg transition-colors enabled:cursor-pointer"
-                      >
-                        {rowBusy === 'save' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                        {rowBusy === 'save' ? s.saving : s.saveKey}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleTest(provider.id)}
-                        disabled={!provider.configured || Boolean(rowBusy)}
-                        className="flex items-center gap-1.5 bg-slate-800 enabled:hover:bg-slate-700 disabled:text-slate-600 text-slate-200 font-bold text-xs px-3 py-2 rounded-lg transition-colors enabled:cursor-pointer"
-                      >
-                        {rowBusy === 'test' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlugZap className="w-3.5 h-3.5" />}
-                        {rowBusy === 'test' ? s.testing : s.testKey}
-                      </button>
-
-                      {provider.source === 'app' && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemove(provider.id)}
-                          disabled={Boolean(rowBusy)}
-                          className="flex items-center gap-1.5 bg-slate-800 enabled:hover:bg-rose-600/30 disabled:text-slate-600 text-rose-300 font-bold text-xs px-3 py-2 rounded-lg transition-colors enabled:cursor-pointer"
-                          title={s.removeKey}
-                        >
-                          {rowBusy === 'remove' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                          <span className="hidden sm:inline">{s.removeKey}</span>
-                        </button>
-                      )}
+                        <span
+                          aria-hidden="true"
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            provider.configured ? 'bg-emerald-400' : 'bg-slate-500'
+                          }`}
+                        />
+                        {isSaving
+                          ? s.saving
+                          : rowBusy === 'test'
+                          ? s.testing
+                          : provider.configured
+                          ? provider.source === 'app'
+                            ? s.fromApp
+                            : s.fromEnv
+                          : s.notConfigured}
+                      </span>
                     </div>
                   </div>
 
                   {rowNotice && (
-                    <div
-                      className={`flex items-start gap-2 text-[11px] font-medium rounded-lg px-2.5 py-1.5 border ${
-                        rowNotice.kind === 'ok'
-                          ? 'text-emerald-300 bg-emerald-950/30 border-emerald-500/30'
-                          : 'text-rose-300 bg-rose-950/30 border-rose-500/30'
+                    <p
+                      role="status"
+                      className={`mt-1.5 text-[11px] ${
+                        rowNotice.kind === 'ok' ? 'text-emerald-300' : 'text-rose-300'
                       }`}
                     >
-                      {rowNotice.kind === 'ok' ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      ) : (
-                        <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      )}
-                      <span>{rowNotice.text}</span>
-                    </div>
+                      {rowNotice.text}
+                    </p>
                   )}
                 </div>
               );
             })}
           </div>
         )}
-
-        <div className="bg-indigo-950/30 border border-indigo-500/30 p-4 rounded-xl text-xs text-indigo-200 space-y-2">
-          <div className="flex gap-2 items-start">
-            <Info className="w-4 h-4 shrink-0 text-indigo-400" />
-            <p>{s.localOnly}</p>
-          </div>
-          <div className="flex gap-2 items-start text-indigo-300/80">
-            <Info className="w-4 h-4 shrink-0 text-indigo-400/70" />
-            <p>{s.envNotice}</p>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -105,6 +105,7 @@ function renderBoard(project: ProjectState, overrides: Partial<React.ComponentPr
     onUpdateTaskStatus: vi.fn(),
     onUpdateTaskPositions: vi.fn(),
     onUpdateTaskTitle: vi.fn(),
+    onUpdateTaskFiles: vi.fn(),
     onUpdateCanvasLanes: vi.fn(),
     onCompileTaskPrompt: vi.fn(),
     onAddTask: vi.fn(),
@@ -1116,5 +1117,85 @@ describe('The lanes and cards the user owns', () => {
     fireEvent.click(screen.getByTestId('plan-lane-reset'));
 
     expect(onUpdateCanvasLanes.mock.calls[0][0]).toEqual({});
+  });
+});
+
+/**
+ * A file dragged from the file tree onto a card. The tree and the board are two views of one
+ * project, and this is the gesture that joins them: the path is what a prompt needs, and the card
+ * is where it belongs.
+ */
+describe('Files dropped on a card', () => {
+  const dropData = (value: string, type = 'text/plain') => ({
+    types: [type],
+    dropEffect: 'none',
+    getData: (asked: string) => (asked === type || asked === 'text/plain' ? value : '')
+  });
+
+  it('47. adds the dropped path to the files the card already carries', () => {
+    const { onUpdateTaskFiles } = renderBoard(twoPhaseProject());
+    const card = screen.getByTestId('plan-card-a');
+    const data = dropData('src/dropped.ts');
+
+    fireEvent.dragOver(card, { dataTransfer: data });
+    expect(card.getAttribute('data-file-over')).toBe('true');
+
+    fireEvent.drop(card, { dataTransfer: data });
+
+    expect(onUpdateTaskFiles).toHaveBeenCalledWith('a', ['src/App.tsx', 'src/dropped.ts']);
+    expect(card.getAttribute('data-file-over')).toBeNull();
+  });
+
+  it('48. does not write the project when the same file is dropped twice', () => {
+    const { onUpdateTaskFiles } = renderBoard(twoPhaseProject());
+    const card = screen.getByTestId('plan-card-a');
+
+    fireEvent.drop(card, { dataTransfer: dropData('./src/App.tsx') });
+
+    expect(onUpdateTaskFiles).not.toHaveBeenCalled();
+  });
+
+  it('49. counts the card’s files in its footer and opens the list from there', () => {
+    const { onUpdateTaskFiles } = renderBoard(twoPhaseProject());
+
+    const counter = screen.getByTestId('plan-card-files-a');
+    expect(counter.textContent).toBe('1');
+    expect(counter.getAttribute('title')).toBe('src/App.tsx');
+
+    fireEvent.click(counter);
+    const list = screen.getByTestId('plan-card-file-list-a');
+    expect(within(list).getByText('src/App.tsx')).toBeTruthy();
+
+    fireEvent.click(within(list).getByTestId('plan-card-file-remove-a-0'));
+
+    expect(onUpdateTaskFiles).toHaveBeenCalledWith('a', []);
+  });
+
+  it('50. ignores a drop that is not a file — a folder, or a line of text', () => {
+    const { onUpdateTaskFiles } = renderBoard(twoPhaseProject());
+    const card = screen.getByTestId('plan-card-a');
+
+    fireEvent.drop(card, { dataTransfer: dropData('src/') });
+    fireEvent.drop(card, { dataTransfer: dropData('https://example.com') });
+
+    expect(onUpdateTaskFiles).not.toHaveBeenCalled();
+  });
+});
+
+describe('A card that works on several files', () => {
+  it('51. counts them all and removes any one of them from the list', () => {
+    const project = twoPhaseProject();
+    project.phases[0].tasks[0].relevantFiles = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'];
+    const { onUpdateTaskFiles } = renderBoard(project);
+
+    const counter = screen.getByTestId('plan-card-files-a');
+    expect(counter.textContent).toBe('5');
+    // The card is the height the board gave it: the files live in the panel, not in a second row.
+    expect(within(counter).queryByText('a.ts')).toBeNull();
+
+    fireEvent.click(counter);
+    fireEvent.click(screen.getByTestId('plan-card-file-remove-a-4'));
+
+    expect(onUpdateTaskFiles).toHaveBeenCalledWith('a', ['a.ts', 'b.ts', 'c.ts', 'd.ts']);
   });
 });

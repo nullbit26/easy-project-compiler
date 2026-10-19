@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   Sparkles
 } from 'lucide-react';
+import { Button } from './ui/Button';
 import {
   GitBranchDiff,
   GitBranches,
@@ -370,8 +371,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
   if (!root) return null;
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-      <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-2">
+    /* A section of the screen's one surface, not a card on it. */
+    <div className="space-y-3 border-t border-slate-800/70 pt-5">
+      <div className="flex items-start justify-between gap-2">
         <div>
           <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider">
             {ru ? 'Версии вашей работы' : 'Versions of your work'}
@@ -390,7 +392,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
           <button
             onClick={() => loadStatus(true)}
             disabled={isLoading}
-            className="text-[11px] font-bold bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-50 text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center gap-1.5"
+            className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-slate-800/80 px-2.5 text-[11px] font-medium text-slate-200 ring-1 ring-inset ring-slate-700/80 transition-colors enabled:hover:bg-slate-700/80 enabled:hover:text-white disabled:pointer-events-none disabled:opacity-50"
           >
             {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             <span>{ru ? 'Обновить' : 'Refresh'}</span>
@@ -485,13 +487,13 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setSelected(files.filter((file) => !file.sensitive).map((file) => file.path))}
-                    className="text-[10px] font-bold text-slate-400 hover:text-white cursor-pointer"
+                    className="h-6 cursor-pointer rounded-md px-1.5 text-[10px] font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
                   >
                     {ru ? 'Выбрать все' : 'Select all'}
                   </button>
                   <button
                     onClick={() => setSelected([])}
-                    className="text-[10px] font-bold text-slate-400 hover:text-white cursor-pointer"
+                    className="h-6 cursor-pointer rounded-md px-1.5 text-[10px] font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
                   >
                     {ru ? 'Снять все' : 'Clear'}
                   </button>
@@ -597,7 +599,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
                   {touched && (
                     <button
                       onClick={() => setTouched(false)}
-                      className="text-[10px] font-bold text-slate-400 hover:text-white cursor-pointer inline-flex items-center gap-1"
+                      className="text-[10px] font-medium text-slate-400 hover:text-white cursor-pointer inline-flex items-center gap-1"
                     >
                       <Sparkles className="w-3 h-3" />
                       {ru ? 'Придумать заново' : 'Suggest again'}
@@ -618,7 +620,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
                 <button
                   onClick={commit}
                   disabled={isCommitting || selected.length === 0 || !message.trim()}
-                  className="w-full bg-sky-700 enabled:hover:bg-sky-600 disabled:opacity-50 text-white font-bold text-xs px-4 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center justify-center gap-2"
+                  className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-xs font-medium text-white transition-colors enabled:hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-50"
                 >
                   {isCommitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   <span>
@@ -731,7 +733,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
               <button
                 onClick={startBranch}
                 disabled={isCreatingBranch || !newBranch.trim() || Boolean(branches?.operationInProgress)}
-                className="bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-50 text-slate-100 font-bold text-[11px] px-3 py-2 rounded-lg border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-slate-800/80 px-2.5 text-[11px] font-medium text-slate-200 ring-1 ring-inset ring-slate-700/80 transition-colors enabled:hover:bg-slate-700/80 enabled:hover:text-white disabled:pointer-events-none disabled:opacity-50"
               >
                 {isCreatingBranch ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitBranch className="w-3.5 h-3.5" />}
                 <span>{ru ? 'Начать ветку' : 'Start a branch'}</span>
@@ -781,7 +783,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
                   <button
                     onClick={compareBranches}
                     disabled={isBranchDiffLoading || !compareBase}
-                    className="bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-50 text-slate-100 font-bold text-[11px] px-3 py-2 rounded-lg border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-slate-800/80 px-2.5 text-[11px] font-medium text-slate-200 ring-1 ring-inset ring-slate-700/80 transition-colors enabled:hover:bg-slate-700/80 enabled:hover:text-white disabled:pointer-events-none disabled:opacity-50"
                   >
                     {isBranchDiffLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronRight className="w-3.5 h-3.5" />}
                     <span>{ru ? 'Сравнить' : 'Compare'}</span>

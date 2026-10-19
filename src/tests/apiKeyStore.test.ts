@@ -18,7 +18,14 @@ import {
 
 const GEMINI_SAMPLE = 'AIzaSyA1234567890abcdefghijklmnop';
 const OPENAI_SAMPLE = 'sk-proj-abcdefghijklmnopqrstuvwxyz0123';
-const ENV_VARS = ['GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'NVIDIA_API_KEY'] as const;
+const ENV_VARS = [
+  'GEMINI_API_KEY',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'NVIDIA_API_KEY',
+  'OPENROUTER_API_KEY',
+  'GROQ_API_KEY'
+] as const;
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'epc-keys-'));
 const keysFile = path.join(tempDir, 'api-keys.json');
@@ -156,4 +163,36 @@ describe('API key store', () => {
     expect(() => initApiKeyStore()).not.toThrow();
     expect(getProviderStatuses().every((p) => !p.configured)).toBe(true);
   });
+  it('11. Stores OpenRouter and Groq keys beside the other providers', () => {
+    const openRouterKey = 'sk-or-v1-abcdefghijklmnopqrstuvwxyz0123456789';
+    const groqKey = 'gsk_abcdefghijklmnopqrstuvwxyz0123456789';
+
+    saveApiKey('openrouter', openRouterKey);
+    saveApiKey('groq', groqKey);
+
+    expect(getProviderStatuses().find((p) => p.id === 'openrouter')).toMatchObject({
+      envVar: 'OPENROUTER_API_KEY',
+      configured: true,
+      source: 'app',
+      prefixWarning: false
+    });
+    expect(getProviderStatuses().find((p) => p.id === 'groq')).toMatchObject({
+      envVar: 'GROQ_API_KEY',
+      configured: true,
+      source: 'app',
+      prefixWarning: false
+    });
+    expect(resolveApiKey('openrouter')).toBe(openRouterKey);
+    expect(resolveApiKey('groq')).toBe(groqKey);
+    expect(readKeysFile().keys).toMatchObject({ openrouter: openRouterKey, groq: groqKey });
+    expect(getActiveProvider()).toBe('groq');
+
+    // A key from either host can be pasted with its own dashboard's decoration and still land.
+    saveApiKey('openrouter', '  "Bearer sk-or-v1-abcdefghijklmnopqrstuvwxyz0123456789"\n');
+    expect(resolveApiKey('openrouter')).toBe(openRouterKey);
+
+    removeApiKey('groq');
+    expect(getProviderStatuses().find((p) => p.id === 'groq')).toMatchObject({ configured: false });
+  });
+
 });

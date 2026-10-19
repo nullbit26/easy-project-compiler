@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { autonomyOf } from '../utils/workingMode';
 import { journeyHeading, journeyNumber } from '../utils/journeySteps';
 import { useCopyFlash } from '../utils/copyText';
+import { Button, IconButton, buttonClass } from './ui/Button';
 import { Sparkles, Copy, Download, Check, Cpu, FileCode, Layers, ShieldAlert, ShieldCheck, Play, Loader2, ArrowRight, AlertTriangle, History } from 'lucide-react';
 import { ruleKindLabel } from '../utils/rulesFindingLabels';
 import { formatRulesCheckTime } from '../utils/rulesCheckStamp';
@@ -155,13 +156,9 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
           {t.common.noProjectSubtext}
         </p>
         {onOpenNewProjectModal && (
-          <button
-            onClick={onOpenNewProjectModal}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>{t.common.newProject}</span>
-          </button>
+          <Button variant="primary" size="md" icon={Sparkles} onClick={onOpenNewProjectModal}>
+            {t.common.newProject}
+          </Button>
         )}
       </div>
     );
@@ -251,9 +248,9 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
       </div>
 
       {/* 4-Panel Compiler Workspace */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 @3xl:grid-cols-12 gap-6">
         {/* Left Column: Intent Input & Context Selector (5 cols) */}
-        <div className="lg:col-span-5 space-y-5">
+        <div className="@3xl:col-span-5 space-y-5">
           {/*
             Panel 1: Task / Intent Input.
 
@@ -285,7 +282,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
               <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
                 {project.phases.map((phase) => (
                   <div key={phase.id} className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                       {language === 'ru' ? `Этап ${phase.phaseNumber}` : `Phase ${phase.phaseNumber}`}: {cleanPhaseTitle(phase.title)}
                     </span>
                     <div className="flex flex-wrap gap-1.5">
@@ -295,7 +292,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                           onClick={() => setTaskInput(t.title)}
                           className={`text-[10px] px-2 py-1 rounded-md border font-medium transition-all cursor-pointer flex items-center gap-1 ${
                             taskInput === t.title
-                              ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                              ? 'bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-white border-indigo-500 shadow-sm'
                               : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
                           }`}
                         >
@@ -324,12 +321,9 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                   {' · '}
                   {t.compiler.verifiedFileIndex} {selectedFilePaths.length}/{availableFiles.length}
                 </p>
-                <button
-                  onClick={() => setShowContextSetup(true)}
-                  className="text-[11px] font-bold text-indigo-300 hover:text-indigo-200 bg-indigo-600/15 border border-indigo-500/40 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
-                >
+                <Button variant="accent" size="xs" onClick={() => setShowContextSetup(true)}>
                   {t.compiler.customizeContext}
-                </button>
+                </Button>
               </div>
             ) : (
               <>
@@ -341,7 +335,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                   onClick={() => setContextMode(mode)}
                   className={`py-1.5 rounded-md transition-all cursor-pointer ${
                     contextMode === mode
-                      ? 'bg-indigo-600 text-white shadow-sm'
+                      ? 'bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-white shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -352,7 +346,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
 
             {/* Available Files Checklist: the count is in its row — no line above it. */}
             <div className="space-y-2 pt-2 border-t border-slate-800">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                 {t.compiler.verifiedFileIndex} ({selectedFilePaths.length}/{availableFiles.length})
               </span>
 
@@ -388,12 +382,9 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
             </div>
 
             {settingsAreChosenForUser && (
-              <button
-                onClick={() => setShowContextSetup(false)}
-                className="text-[11px] font-bold text-slate-300 hover:text-white bg-slate-800 border border-slate-700 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
-              >
+              <Button variant="ghost" size="xs" onClick={() => setShowContextSetup(false)}>
                 {t.compiler.hideContextSetup}
-              </button>
+              </Button>
             )}
               </>
             )}
@@ -408,9 +399,11 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
               disabled={isCompiling}
               title={isCompiling ? t.compiler.compilingPrompt : compiledPrompt ? t.compiler.recompilePrompt : t.compiler.startCompile}
               aria-label={isCompiling ? t.compiler.compilingPrompt : compiledPrompt ? t.compiler.recompilePrompt : t.compiler.startCompile}
-              className={`w-full h-9 bg-indigo-600 enabled:hover:bg-indigo-500 text-white transition-all shadow-sm grid place-items-center rounded-lg enabled:cursor-pointer disabled:opacity-50 ${
-                isOutdated ? 'ring-2 ring-amber-500/50' : ''
-              }`}
+              className={buttonClass({
+                variant: 'primary',
+                size: 'md',
+                className: `w-full ${isOutdated ? 'ring-2 ring-amber-500/50' : ''}`
+              })}
             >
               {isCompiling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
             </button>
@@ -418,14 +411,25 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
         </div>
 
         {/* Right Column: Compiled Prompt Output & Agent Execution Simulation (7 cols) */}
-        <div className="lg:col-span-7 space-y-5">
-          {/* Panel 3: Compiled Prompt Result */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
+        <div className="@3xl:col-span-7 space-y-5">
+          {/*
+            Panel 3: Compiled Prompt Result.
+
+            Before the first compile there is no result, so there is no panel either: a framed box
+            holding one sentence about pressing Start was the largest empty surface on the screen.
+            The sentence stands on the page, and the surface appears with the prompt.
+          */}
+          <div
+            className={`rounded-2xl p-4 space-y-4 ${
+              compiledPrompt || isCompiling ? 'bg-slate-900 border border-slate-800' : ''
+            }`}
+          >
             {/*
               The output has no heading of its own: the token count and, when the offline engine
               answered, its badge say everything a title would — the box itself is the result.
               Both buttons are icons with the name in the tooltip, so actions read in one glance.
             */}
+            {(compiledPrompt || isCompiling) && (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {compiledPrompt && (
@@ -449,49 +453,35 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
               </div>
 
               <div className="flex items-center gap-1.5">
-                <button
-                  onClick={handleDownloadPrompt}
-                  title={t.common.export}
-                  aria-label={t.common.export}
-                  className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all cursor-pointer"
-                >
-                  <Download className="w-4 h-4" />
-                </button>
+                <IconButton label={t.common.export} icon={Download} onClick={handleDownloadPrompt} />
 
-                <button
+                <IconButton
+                  label={
+                    copyFlash.state === 'copied'
+                      ? t.common.copied
+                      : copyFlash.state === 'failed'
+                      ? t.common.copyFailed
+                      : t.common.copy
+                  }
+                  icon={
+                    copyFlash.state === 'copied'
+                      ? Check
+                      : copyFlash.state === 'failed'
+                      ? AlertTriangle
+                      : Copy
+                  }
+                  variant={
+                    copyFlash.state === 'copied'
+                      ? 'success'
+                      : copyFlash.state === 'failed'
+                      ? 'warning'
+                      : 'secondary'
+                  }
                   onClick={handleCopyPrompt}
-                  title={
-                    copyFlash.state === 'copied'
-                      ? t.common.copied
-                      : copyFlash.state === 'failed'
-                      ? t.common.copyFailed
-                      : t.common.copy
-                  }
-                  aria-label={
-                    copyFlash.state === 'copied'
-                      ? t.common.copied
-                      : copyFlash.state === 'failed'
-                      ? t.common.copyFailed
-                      : t.common.copy
-                  }
-                  className={`grid h-8 w-8 place-items-center rounded-lg transition-all cursor-pointer ${
-                    copyFlash.state === 'copied'
-                      ? 'bg-emerald-700 text-emerald-100'
-                      : copyFlash.state === 'failed'
-                      ? 'bg-amber-800 text-amber-100'
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                  }`}
-                >
-                  {copyFlash.state === 'copied' ? (
-                    <Check className="w-4 h-4" />
-                  ) : copyFlash.state === 'failed' ? (
-                    <AlertTriangle className="w-4 h-4" />
-                  ) : (
-                    <Copy className="w-4 h-4" />
-                  )}
-                </button>
+                />
               </div>
             </div>
+            )}
 
             {/*
               What the prompt was told about the project's rules. The agent's output is only as
@@ -504,7 +494,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                 className="bg-slate-950/60 rounded-lg p-3 space-y-2"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                     <ShieldCheck className="w-3.5 h-3.5" />
                     <span>{t.compiler.rulesCheckTitle}</span>
                   </span>
@@ -620,22 +610,28 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
               </div>
             )}
 
-            <div className="relative bg-slate-950/70 rounded-xl p-4 font-mono text-xs text-slate-200 overflow-x-auto max-h-96 leading-relaxed whitespace-pre-wrap">
-              {isCompiling ? (
-                <div className="flex items-center justify-center py-12 text-slate-400 gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
-                  <span>{t.compiler.compilingNotice}</span>
-                </div>
-              ) : compiledPrompt ? (
-                compiledPrompt.promptText
-              ) : (
-                // No second Start button here: the one trigger lives at the end of the form, and a
-                // copy inside the empty result box only raised the question of which one to press.
-                <div className="flex flex-col items-center justify-center gap-2 py-10 text-center font-sans">
-                  <p className="text-xs text-slate-400 max-w-sm">{t.compiler.startHint}</p>
-                </div>
-              )}
-            </div>
+            {/*
+              Nothing compiled yet is a sentence, not a box.
+
+              The result used to be a tall bordered field holding one line of grey text, drawn
+              before there was anything to put in it — the largest empty surface on the screen, and
+              the one that made the compiler look like it had already failed. An empty result is a
+              line of caption where the prompt will appear; the field itself arrives with the prompt.
+            */}
+            {isCompiling || compiledPrompt ? (
+              <div className="relative bg-slate-950/70 rounded-xl p-4 font-mono text-xs text-slate-200 overflow-x-auto max-h-96 leading-relaxed whitespace-pre-wrap">
+                {isCompiling ? (
+                  <div className="flex items-center justify-center py-12 text-slate-400 gap-2">
+                    <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                    <span>{t.compiler.compilingNotice}</span>
+                  </div>
+                ) : (
+                  compiledPrompt?.promptText
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 max-w-sm">{t.compiler.startHint}</p>
+            )}
           </div>
         </div>
       </div>
@@ -645,7 +641,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
         the compiled prompt on the right, the old place for "3" made the third step look like a
         footnote to the output instead of the next thing to do with it.
       */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+      <div className="space-y-2">
             {/*
               The answer goes into the field and leaves with one icon: the placeholder names the
               field, the tooltip names where the button goes. No heading and no paragraph above
@@ -663,9 +659,9 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                   }
                   title={simulatedResult.trim() ? t.compiler.reviewPastedCode : t.compiler.goToReview}
                   aria-label={simulatedResult.trim() ? t.compiler.reviewPastedCode : t.compiler.goToReview}
-                  className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all cursor-pointer shrink-0"
+                  className={buttonClass({ variant: 'primary', size: 'sm', iconOnly: true, className: 'shrink-0' })}
                 >
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
             )}

@@ -181,6 +181,12 @@ describe('The working screen', () => {
     // Reading the same folder again is not choosing anything, so it stays.
     expect(screen.getByRole('button', { name: /Обновить список/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Отключить' })).toBeInTheDocument();
+
+    // The sandbox-and-undo sentence is not a paragraph under the row any more: it is the
+    // accessible name and the tooltip of one quiet question mark beside the counts.
+    expect(screen.queryByText(/Приложение работает только внутри подключённой папки/)).not.toBeInTheDocument();
+    const hint = screen.getByRole('button', { name: /^Приложение работает только внутри/ });
+    expect(hint).toHaveAttribute('title', expect.stringContaining('никогда не читает .env'));
   });
 
   it('2. after disconnecting, brings the project’s own folder back instead of asking for one', async () => {
@@ -237,6 +243,12 @@ describe('Step 1 of the beginner flow', () => {
 
     await waitFor(() => expect(screen.getByText('Папка подключена:')).toBeInTheDocument(), { timeout: 4000 });
     expect(screen.getByText(SERVER_FOLDER)).toBeInTheDocument();
+
+    // Same rule on the helper's step 1: the sentence is a tooltip, not a paragraph.
+    expect(screen.queryByText(/Приложение никогда не читает/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /^Приложение никогда не читает/ })
+    ).toHaveAttribute('title', expect.stringContaining('.env'));
 
     // Step 1 is not a folder dialog: no picker, no path field, no "connect".
     expect(folderChoosingControls()).toHaveLength(0);

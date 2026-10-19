@@ -28,10 +28,26 @@ const NVIDIA_MODELS = [
 ];
 const GEMINI_TEST_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
 
-/** Every provider this router can talk to, with its model candidates and endpoint. */
-const PROVIDER_CHAIN: Record<'openai' | 'nvidia', { baseUrl: string; models: string[] }> = {
+// OpenRouter and Groq both speak the OpenAI chat contract on their own hosts, so they join the
+// same request path as OpenAI and NVIDIA NIM instead of getting a client of their own.
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const OPENROUTER_MODELS = [
+  'openai/gpt-oss-20b',
+  'meta-llama/llama-3.3-70b-instruct',
+  'deepseek/deepseek-chat'
+];
+const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
+const GROQ_MODELS = ['llama-3.3-70b-versatile', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'];
+
+/** Providers that answer through the OpenAI-compatible `/chat/completions` contract. */
+type CompatibleProviderId = 'openai' | 'nvidia' | 'openrouter' | 'groq';
+
+/** Every compatible provider, with its model candidates and endpoint. */
+const PROVIDER_CHAIN: Record<CompatibleProviderId, { baseUrl: string; models: string[] }> = {
   openai: { baseUrl: 'https://api.openai.com/v1', models: OPENAI_MODELS },
-  nvidia: { baseUrl: NVIDIA_BASE_URL, models: NVIDIA_MODELS }
+  nvidia: { baseUrl: NVIDIA_BASE_URL, models: NVIDIA_MODELS },
+  openrouter: { baseUrl: OPENROUTER_BASE_URL, models: OPENROUTER_MODELS },
+  groq: { baseUrl: GROQ_BASE_URL, models: GROQ_MODELS }
 };
 
 export type FailureReason =
@@ -301,7 +317,7 @@ async function requestOpenAiCompatibleText(
  * host that refuses the shape is answering about the request rather than about the task.
  */
 async function requestCompatibleProviderText(
-  provider: 'openai' | 'nvidia',
+  provider: CompatibleProviderId,
   apiKey: string,
   model: string,
   prompt: string,
@@ -410,7 +426,7 @@ async function callGeminiJson(prompt: string, responseSchema?: any): Promise<any
 }
 
 async function callRestProviderJson(
-  provider: 'openai' | 'anthropic' | 'nvidia',
+  provider: Exclude<ProviderId, 'gemini'>,
   prompt: string,
   responseSchema?: any
 ): Promise<any | null> {

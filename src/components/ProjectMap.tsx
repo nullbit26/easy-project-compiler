@@ -26,6 +26,7 @@ import { formatRulesCheckTime, stampFromAudit, type RulesCheckStamp } from '../u
 import { auditRulesWithFacts, readFolderFacts, type FolderFacts } from '../services/rulesCheck';
 import { ruleKindLabel } from '../utils/rulesFindingLabels';
 import { useCopyFlash } from '../utils/copyText';
+import { Button, IconButton, buttonClass } from './ui/Button';
 import {
   Terminal,
   FileCode,
@@ -241,13 +242,9 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
         <h3 className="text-lg font-bold text-white">{t.common.noProjectSelected}</h3>
         <p className="text-xs text-slate-400">{t.common.noProjectSubtext}</p>
         {onOpenNewProjectModal && (
-          <button
-            onClick={onOpenNewProjectModal}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>{t.common.newProject}</span>
-          </button>
+          <Button variant="primary" size="md" icon={Sparkles} onClick={onOpenNewProjectModal}>
+            {t.common.newProject}
+          </Button>
         )}
       </div>
     );
@@ -448,7 +445,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               disabled={isDescribing || files.length === 0}
               title={isDescribing ? t.map.describingButton : t.map.describeButton}
               aria-label={isDescribing ? t.map.describingButton : t.map.describeButton}
-              className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-600 enabled:hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white transition-all enabled:cursor-pointer"
+              className={buttonClass({ variant: 'primary', size: 'sm', iconOnly: true })}
             >
               {isDescribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             </button>
@@ -462,11 +459,11 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 @3xl:grid-cols-12 gap-6">
         {/* Left Column: Interactive File Tree (5 cols) */}
-        <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
+        <div className="@3xl:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+            <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
               {isRu ? 'Проверенные файлы' : 'Verified File Index'} ({files.length})
             </h3>
             <span className="text-[10px] text-slate-400 font-semibold">{project.projectType}</span>
@@ -512,7 +509,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
         </div>
 
         {/* Right Column: File Details & Rules Generator (7 cols) */}
-        <div className="lg:col-span-7 space-y-5">
+        <div className="@3xl:col-span-7 space-y-5">
           {/* Selected File Symbol Breakdown */}
           {selectedFile && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
@@ -549,7 +546,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               {/* Symbols */}
               {selectedFile.symbols && selectedFile.symbols.length > 0 && (
                 <div className="space-y-1 pt-2 border-t border-slate-800">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                     {t.map.symbolsTitle}
                   </span>
                   <div className="flex flex-wrap gap-1.5">
@@ -568,7 +565,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               {/* Imports */}
               {selectedFile.imports && selectedFile.imports.length > 0 && (
                 <div className="space-y-1 pt-2 border-t border-slate-800">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                     {t.map.importsTitle}
                   </span>
                   <div className="flex flex-wrap gap-1.5">
@@ -588,7 +585,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               {/* What the AI found in this very file */}
               {selectedInsight && (
                 <div className="space-y-1 pt-2 border-t border-slate-800">
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Sparkles className="w-3 h-3" />
                   {t.map.fileInsightTitle}
                 </span>
@@ -613,7 +610,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
           {insights && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Sparkles className="w-3 h-3" />
                   {t.map.insightsTitle}
                 </span>
@@ -626,7 +623,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
 
               {insights.nextSteps.length > 0 && (
                 <div className="space-y-1.5 pt-2 border-t border-slate-800">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                     <ListChecks className="w-3.5 h-3.5 text-slate-500" />
                     {t.map.insightsNextSteps}
                   </span>
@@ -688,7 +685,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
                 disabled={!folderRoot || isChecking || isWriting}
                 title={folderRoot ? folderRoot : t.map.rulesNoFolder}
                 aria-label={t.map.rulesWriteButton}
-                className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-600 enabled:hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white shadow-sm transition-all enabled:cursor-pointer"
+                className={buttonClass({ variant: 'primary', size: 'sm', iconOnly: true })}
               >
                 {isChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderDown className="w-4 h-4" />}
               </button>
@@ -706,7 +703,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               <button
                 onClick={() => setActiveRuleTab('agents')}
                 className={`py-1.5 rounded-md transition-all cursor-pointer ${
-                  activeRuleTab === 'agents' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  activeRuleTab === 'agents' ? 'bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-white' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 AGENTS.md
@@ -715,7 +712,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               <button
                 onClick={() => setActiveRuleTab('claude')}
                 className={`py-1.5 rounded-md transition-all cursor-pointer ${
-                  activeRuleTab === 'claude' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  activeRuleTab === 'claude' ? 'bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-white' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 CLAUDE.md
@@ -724,7 +721,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               <button
                 onClick={() => setActiveRuleTab('cursor')}
                 className={`py-1.5 rounded-md transition-all cursor-pointer ${
-                  activeRuleTab === 'cursor' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  activeRuleTab === 'cursor' ? 'bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-white' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 {RULES_FILE_PATHS.cursor}
@@ -753,7 +750,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
               className="bg-slate-950/60 rounded-lg p-3 space-y-2.5"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>{t.map.rulesAuditTitle}</span>
                 </span>
@@ -780,7 +777,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
                   <button
                     onClick={handleRecheck}
                     disabled={isAuditing}
-                    className="bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold text-[10px] px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 enabled:cursor-pointer"
+                    className={buttonClass({ variant: 'secondary', size: 'xs' })}
                   >
                     {isAuditing ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -884,7 +881,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
                 <div className="space-y-1.5 pt-2 border-t border-slate-800">
                   <button
                     onClick={handleFixRules}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
+                    className={buttonClass({ variant: 'primary', size: 'xs' })}
                   >
                     <ShieldCheck className="w-3.5 h-3.5" />
                     <span>
@@ -931,9 +928,9 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
                   <button
                     onClick={closeWriteFlow}
                     aria-label={t.common.cancel}
-                    className="text-slate-400 hover:text-slate-300 cursor-pointer"
+                    className="text-slate-400 transition-colors hover:text-slate-300 cursor-pointer"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
 
@@ -956,14 +953,14 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
                   <button
                     onClick={handleWriteRules}
                     disabled={isWriting}
-                    className="bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg enabled:cursor-pointer flex items-center gap-1.5"
+                    className={buttonClass({ variant: 'primary', size: 'xs' })}
                   >
                     {isWriting ? <Loader2 className="w-3 h-3 animate-spin" /> : <FolderDown className="w-3 h-3" />}
                     <span>{isWriting ? t.map.rulesWriting : t.map.rulesWriteConfirm}</span>
                   </button>
                   <button
                     onClick={closeWriteFlow}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-[11px] px-3 py-1.5 rounded-lg cursor-pointer"
+                    className={buttonClass({ variant: 'ghost', size: 'xs' })}
                   >
                     {t.common.cancel}
                   </button>
@@ -1017,7 +1014,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
                     <button
                       onClick={handleUndoWrite}
                       disabled={isUndoing}
-                      className="bg-amber-950/60 enabled:hover:bg-amber-900/60 border border-amber-800 text-amber-200 font-bold text-[11px] px-3 py-1.5 rounded-lg enabled:cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                      className={buttonClass({ variant: 'warning', size: 'xs' })}
                     >
                       {isUndoing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Undo2 className="w-3 h-3" />}
                       <span>{isUndoing ? t.map.rulesUndoing : t.map.rulesUndo}</span>
@@ -1027,7 +1024,7 @@ export const ProjectMap: React.FC<ProjectMapProps> = ({
 
                 <button
                   onClick={closeWriteFlow}
-                  className="text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                  className={buttonClass({ variant: 'ghost', size: 'xs' })}
                 >
                   {t.map.rulesDone}
                 </button>

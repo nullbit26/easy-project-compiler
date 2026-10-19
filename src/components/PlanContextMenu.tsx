@@ -133,7 +133,6 @@ export const PlanContextMenu: React.FC<PlanContextMenuProps> = ({
     onClose();
   };
 
-  const title = target.lane?.label || target.task?.title || '';
   const color = target.lane ? LANE_COLORS[target.lane.color] : null;
 
   return (
@@ -148,69 +147,78 @@ export const PlanContextMenu: React.FC<PlanContextMenuProps> = ({
       onContextMenu={(event) => event.preventDefault()}
       className="fixed z-50 rounded-xl border border-slate-700 bg-slate-900/98 backdrop-blur shadow-2xl shadow-black/60 p-2.5 space-y-2.5"
     >
-      <div className="flex items-center gap-2 px-1 pt-0.5">
-        {color && <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${color.dot}`} />}
-        <span className="text-[11px] font-bold text-slate-200 truncate">{title}</span>
-      </div>
-
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-1.5 px-1">
-          <Type className="w-3 h-3 text-slate-400" />
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            {target.lane ? t.plan.laneMenuRename : t.plan.cardMenuRename}
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <input
-            ref={inputRef}
-            data-testid="plan-context-rename"
-            value={draft}
-            placeholder={target.lane ? t.plan.laneRenamePlaceholder : t.plan.cardRenamePlaceholder}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                commit();
-              }
-            }}
-            className="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-100 focus:border-indigo-600"
-          />
-          <button
-            onClick={commit}
-            data-testid="plan-context-apply"
-            title={t.common.apply}
-            aria-label={t.common.apply}
-            className="w-7 h-7 shrink-0 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center cursor-pointer"
-          >
-            <Check className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {target.task && onAutoCode && (
-        <button
-          data-testid="plan-context-autocode"
-          onClick={() => {
-            onAutoCode(target.task!);
-            onClose();
-          }}
-          title={t.plan.autoCodeButton}
-          className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded-lg text-[11px] font-semibold text-indigo-300 hover:bg-indigo-600/15 hover:text-indigo-200 cursor-pointer"
+      {/*
+        The menu is icons, not a document.
+        *
+        * A card right-click used to open a small panel that said the card's name twice (a heading
+        * above a field already holding it), labelled its one field with an uppercase caption, and
+        * spelled the robot action out as "Автокодинг: сделать самому". Three lines of words to
+        * describe two things a pencil and a chip say on their own. What is left is the name field —
+        * which has to be a field, because renaming is typing — and a row of icon buttons, each
+        * carrying its words in the tooltip and the accessible name.
+        */}
+      <div className="flex items-center gap-1.5">
+        <span
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400"
+          title={target.lane ? t.plan.laneMenuRename : t.plan.cardMenuRename}
         >
-          <Cpu className="w-3.5 h-3.5" />
-          {t.plan.autoCodeButton}
+          {color ? (
+            <span className={`h-2.5 w-2.5 rounded-full ${color.dot}`} />
+          ) : (
+            <Type className="h-3.5 w-3.5" />
+          )}
+        </span>
+        <input
+          ref={inputRef}
+          data-testid="plan-context-rename"
+          aria-label={target.lane ? t.plan.laneMenuRename : t.plan.cardMenuRename}
+          value={draft}
+          placeholder={target.lane ? t.plan.laneRenamePlaceholder : t.plan.cardRenamePlaceholder}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              commit();
+            }
+          }}
+          className="h-7 min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-950 px-2 text-xs text-slate-100 focus:border-indigo-600"
+        />
+        <button
+          onClick={commit}
+          data-testid="plan-context-apply"
+          title={t.common.apply}
+          aria-label={t.common.apply}
+          className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-indigo-600 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] hover:bg-indigo-500"
+        >
+          <Check className="h-3.5 w-3.5" />
         </button>
-      )}
+      </div>
 
-      {target.lane && (
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-1.5 px-1">
-            <Palette className="w-3 h-3 text-slate-400" />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              {t.plan.laneMenuColor}
+      <div className="flex items-center gap-1 border-t border-slate-800/80 pt-2">
+        {target.task && onAutoCode && (
+          <button
+            data-testid="plan-context-autocode"
+            onClick={() => {
+              onAutoCode(target.task!);
+              onClose();
+            }}
+            title={t.plan.autoCodeButton}
+            aria-label={t.plan.autoCodeButton}
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-indigo-500/12 text-indigo-300 ring-1 ring-inset ring-indigo-400/30 transition-colors hover:bg-indigo-500/20 hover:text-indigo-200"
+          >
+            <Cpu className="h-3.5 w-3.5" />
+          </button>
+        )}
+
+        {target.lane && (
+          <>
+            <span
+              className="flex h-7 w-5 items-center justify-center text-slate-400"
+              title={t.plan.laneMenuColor}
+            >
+              <Palette className="h-3.5 w-3.5" />
             </span>
-          </div>
-          <div className="flex items-center gap-1.5 px-1 flex-wrap">
+            <div className="flex flex-wrap items-center gap-1.5">
             {LANE_COLOR_ORDER.map((key) => (
               <button
                 key={key}
@@ -229,23 +237,25 @@ export const PlanContextMenu: React.FC<PlanContextMenuProps> = ({
                 }`}
               />
             ))}
-          </div>
-        </div>
-      )}
+            </div>
+          </>
+        )}
 
-      {target.lane?.custom && (
-        <button
-          data-testid="plan-lane-reset"
-          onClick={() => {
-            onResetLane();
-            onClose();
-          }}
-          className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-400 hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          {t.plan.laneMenuReset}
-        </button>
-      )}
+        {target.lane?.custom && (
+          <button
+            data-testid="plan-lane-reset"
+            onClick={() => {
+              onResetLane();
+              onClose();
+            }}
+            title={t.plan.laneMenuReset}
+            aria-label={t.plan.laneMenuReset}
+            className="ml-auto flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
     </div>
   );
 };

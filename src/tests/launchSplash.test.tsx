@@ -49,7 +49,7 @@ describe('Starting the app', () => {
     );
 
     // Both are on screen: the app has already built its own window chrome behind the animation.
-    expect(screen.getByTestId('app-title-bar')).toHaveTextContent('Easy Project Compiler');
+    expect(screen.getByTestId('app-brand')).toHaveTextContent('Easy Project Compiler');
     expect(screen.getByTestId('launch-splash')).toBeTruthy();
   });
 

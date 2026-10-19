@@ -15,6 +15,7 @@ import {
 import { generateCustomRulesFiles } from '../utils/rulesGenerator';
 import { withAutonomy, withInterfaceMode } from '../utils/workingMode';
 import { RulesCheckStamp } from '../utils/rulesCheckStamp';
+import { mergeTaskFiles } from '../utils/taskFiles';
 import { useLanguage } from './LanguageContext';
 
 interface ProjectContextType {
@@ -76,6 +77,11 @@ interface ProjectContextType {
   onUpdateTaskPositions: (positions: Record<string, { x: number; y: number }>) => void;
   /** Renaming a task on the board: the plan's own words for what the work is. */
   onUpdateTaskTitle: (taskId: string, title: string) => void;
+  /**
+   * The files a card is told to work on — dropped from the file tree onto the card. The whole list
+   * is written, because removing a file is the same gesture as adding one and both end here.
+   */
+  onUpdateTaskFiles: (taskId: string, files: string[]) => void;
   /**
    * The board's lanes as the user arranged them — name, colour, and how far each was dragged. Kept on
    * the project for the same reason card positions are: the arrangement belongs to the plan.
@@ -468,6 +474,25 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   /**
+   * The card's files, written whole and normalized on the way in: the board has already removed
+   * repeats, but storage is the last place that can make sure a card never holds a path the plan
+   * cannot open or more files than a prompt can name.
+   */
+  const onUpdateTaskFiles = (taskId: string, files: string[]) => {
+    if (!currentProject) return;
+    const clean = mergeTaskFiles(files, []);
+
+    const updatedPhases = currentProject.phases.map((phase) => ({
+      ...phase,
+      tasks: phase.tasks.map((task) => (task.id === taskId ? { ...task, relevantFiles: clean } : task))
+    }));
+
+    const updated = { ...currentProject, phases: updatedPhases };
+    setCurrentProject(updated);
+    setAllProjects(allProjects.map((p) => (p.id === updated.id ? updated : p)));
+  };
+
+  /**
    * The board's lanes, written whole. The board sends the map it is drawing from, so a lane that was
    * put back to its defaults arrives here as a lane whose fields are simply gone.
    */
@@ -647,6 +672,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         onAdaptProjectPhases,
         onUpdateTaskPositions,
         onUpdateTaskTitle,
+        onUpdateTaskFiles,
         onUpdateCanvasLanes
       }}
     >

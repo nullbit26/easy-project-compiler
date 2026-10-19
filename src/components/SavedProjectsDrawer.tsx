@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ProjectState } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { FolderGit2, Trash2, Sparkles, FolderOpen, X, ArrowRight, Check, Cpu, Layers } from 'lucide-react';
+import { Button, IconButton } from './ui/Button';
 
 interface SavedProjectsDrawerProps {
   isOpen: boolean;
@@ -70,13 +71,7 @@ export const SavedProjectsDrawer: React.FC<SavedProjectsDrawerProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={onClose}
-              aria-label={t.common.close}
-              className="p-1.5 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <IconButton label={t.common.close} icon={X} onClick={onClose} />
           </div>
 
           {/* Project List Content */}
@@ -93,7 +88,7 @@ export const SavedProjectsDrawer: React.FC<SavedProjectsDrawerProps> = ({
                     onClose();
                     onOpenNewProjectModal();
                   }}
-                  className="mt-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+                  className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] px-4 text-xs font-medium text-white transition-colors hover:bg-indigo-500"
                 >
                   <Sparkles className="w-4 h-4" />
                   <span>{t.common.newProject}</span>
@@ -134,10 +129,11 @@ export const SavedProjectsDrawer: React.FC<SavedProjectsDrawerProps> = ({
 
                       <button
                         onClick={() => setPendingId(pendingId === proj.id ? null : proj.id)}
-                        className="text-slate-400 hover:text-rose-400 p-1.5 hover:bg-slate-900 rounded-lg transition-colors cursor-pointer"
+                        className="h-7 w-7 shrink-0 rounded-md text-slate-400 transition-colors hover:bg-rose-500/10 hover:text-rose-300"
                         title={t.drawer.deleteHint}
+                        aria-label={t.drawer.deleteHint}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
 
@@ -167,7 +163,7 @@ export const SavedProjectsDrawer: React.FC<SavedProjectsDrawerProps> = ({
                           <button
                             data-drawer-delete-cancel
                             onClick={() => setPendingId(null)}
-                            className="text-[10px] font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
+                            className="h-7 cursor-pointer rounded-md bg-slate-800/80 px-2.5 text-[10px] font-medium text-slate-300 ring-1 ring-inset ring-slate-700/80 transition-colors hover:bg-slate-700/80 hover:text-white"
                           >
                             {t.common.cancel}
                           </button>
@@ -177,7 +173,7 @@ export const SavedProjectsDrawer: React.FC<SavedProjectsDrawerProps> = ({
                               onDeleteProject(proj.id);
                               setPendingId(null);
                             }}
-                            className="text-[10px] font-bold text-white bg-rose-600 hover:bg-rose-500 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
+                            className="text-[10px] font-medium text-white bg-rose-600 hover:bg-rose-500 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
                           >
                             {t.common.delete}
                           </button>
@@ -191,7 +187,7 @@ export const SavedProjectsDrawer: React.FC<SavedProjectsDrawerProps> = ({
                           onSelectProject(proj);
                           onClose();
                         }}
-                        className="w-full bg-slate-800 hover:bg-indigo-600 hover:text-white text-slate-200 font-semibold text-xs py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="inline-flex h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-800/80 text-xs font-medium text-slate-200 ring-1 ring-inset ring-slate-700/80 transition-colors hover:bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] hover:text-white"
                       >
                         <span>{t.drawer.openProject}</span>
                         <ArrowRight className="w-3.5 h-3.5" />
@@ -210,7 +206,7 @@ export const SavedProjectsDrawer: React.FC<SavedProjectsDrawerProps> = ({
                 onClose();
                 onOpenNewProjectModal();
               }}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              className="inline-flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-xs font-medium text-white transition-colors hover:bg-indigo-500"
             >
               <Sparkles className="w-4 h-4" />
               <span>{t.common.newProject}</span>

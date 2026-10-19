@@ -87,7 +87,7 @@ export const UpdateNotice: React.FC = () => {
           type="button"
           disabled={busy}
           onClick={() => run(() => window.desktopUpdates!.download())}
-          className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-50 px-2 py-1.5 text-[11px] font-bold text-white transition-colors enabled:cursor-pointer"
+          className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] px-2 py-1.5 text-[11px] font-medium text-white transition-colors enabled:hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-50"
         >
           <Download className="w-3.5 h-3.5" />
           {u.download}
@@ -121,7 +121,7 @@ export const UpdateNotice: React.FC = () => {
           type="button"
           disabled={busy}
           onClick={() => run(() => window.desktopUpdates!.install())}
-          className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 enabled:hover:bg-emerald-500 disabled:opacity-50 px-2 py-1.5 text-[11px] font-bold text-white transition-colors enabled:cursor-pointer"
+          className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-2 py-1.5 text-[11px] font-medium text-white transition-colors enabled:hover:bg-emerald-600 disabled:pointer-events-none disabled:opacity-50"
         >
           <RotateCw className="w-3.5 h-3.5" />
           {u.restart}
@@ -141,7 +141,7 @@ export const UpdateNotice: React.FC = () => {
         type="button"
         disabled={busy}
         onClick={() => run(() => window.desktopUpdates!.check())}
-        className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 enabled:hover:bg-amber-500/10 disabled:opacity-50 px-2 py-1 text-[10px] font-bold text-amber-100 transition-colors enabled:cursor-pointer"
+        className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 px-2 py-1 text-[10px] font-medium text-amber-100 transition-colors enabled:hover:bg-amber-500/10 disabled:pointer-events-none disabled:opacity-50"
       >
         <RefreshCw className="w-3 h-3" />
         {u.retry}

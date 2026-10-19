@@ -48,10 +48,11 @@ const SCREENS = [
   { file: '06-preview', hash: '#/preview' },
   { file: '07-coach', hash: '#/coach' },
   { file: '08-plan', hash: '#/plan' },
+  { file: '08b-studio', hash: '#/studio' },
   { file: '09-map', hash: '#/map' },
   { file: '10-files', hash: '#/files' },
   { file: '11-brief', hash: '#/brief' },
-  { file: '12-api-keys', hash: '#/', open: 'apiKeys', focus: 'Настройки API провайдеров' }
+  { file: '12-api-keys', hash: '#/', open: 'apiKeys', focus: 'Настройки API' }
 ];
 
 /**
@@ -879,7 +880,7 @@ async function openApiKeys(win) {
   if (!clicked) throw new Error('no button to open the API keys panel');
   await waitUntil(
     win,
-    `Boolean(document.body.innerText.match(/Настройки API провайдеров/))`,
+    `Boolean(document.body.innerText.includes('Настройки API'))`,
     8000,
     'the API keys panel'
   );
@@ -991,6 +992,28 @@ app.whenReady().then(async () => {
         if (screen.open === 'wizard') await openWizard(win);
         if (screen.open === 'apiKeys') await openApiKeys(win);
         await wait(700);
+        /*
+         * EPC_SHOT_RIGHTCLICK=<selector> opens a context menu before the picture: a menu is a state,
+         * not a screen, so it cannot be reached by a hash and has to be opened by the shot itself.
+         */
+        if (process.env.EPC_SHOT_RIGHTCLICK) {
+          const selector = JSON.stringify(process.env.EPC_SHOT_RIGHTCLICK);
+          await js(
+            win,
+            `(() => {
+              const el = document.querySelector(${selector});
+              if (!el) return false;
+              const box = el.getBoundingClientRect();
+              el.dispatchEvent(new MouseEvent('contextmenu', {
+                bubbles: true, cancelable: true, button: 2,
+                clientX: Math.round(box.left + box.width / 2),
+                clientY: Math.round(box.top + box.height / 2)
+              }));
+              return true;
+            })()`
+          );
+          await wait(400);
+        }
         const overlayOpen = await js(win, MODAL_OPEN);
         if (overlayOpen && !screen.open) {
           throw new Error('a dialog was still open over this screen');

@@ -421,6 +421,10 @@ export interface Translations {
     /** The strip at the top of a zone, and the only place a zone can be dragged from. */
     laneHandle: string;
     laneResize: string;
+    /** The cross on a file chip: the picked file leaves the card's AI context. */
+    removeFile: string;
+    /** The files a card works on, named for screen readers behind the count in its footer. */
+    cardFiles: string;
     cardMenuRename: string;
     cardRenamePlaceholder: string;
     colorSlate: string;
@@ -614,13 +618,11 @@ export interface Translations {
   };
   apiSettings: {
     title: string;
-    subtitle: string;
     gemini: string;
     openai: string;
     anthropic: string;
     configured: string;
     notConfigured: string;
-    envNotice: string;
     fromApp: string;
     fromEnv: string;
     activeProvider: string;
@@ -631,6 +633,8 @@ export interface Translations {
     keyLabel: string;
     saveKey: string;
     saving: string;
+    /** Icon-only control in a saved row: opens the field to replace the key. */
+    editKey: string;
     savedKey: string;
     testKey: string;
     testing: string;
@@ -641,7 +645,6 @@ export interface Translations {
     show: string;
     hide: string;
     getKey: string;
-    localOnly: string;
     prefixWarning: string;
     reasonAuth: string;
     reasonQuota: string;
@@ -1042,13 +1045,13 @@ export const translations: Record<Language, Translations> = {
       adaptPlanButton: 'Адаптировать план с ИИ',
       compilePrompt: 'Компилировать промпт',
       compileShort: 'Промпт',
-      autoCodeButton: 'Автокодинг: сделать самому',
-      autoCodeAllButton: 'Автокодинг всего плана: задачи по очереди',
+      autoCodeButton: 'Авто',
+      autoCodeAllButton: 'Авто: весь план по очереди',
       autoCodeRunning: 'ИИ пишет код сам',
       autoCodeFailedNotice: 'Проверки не прошли — последняя запись откатить не удалась, откатите в разделе файлов.',
       autoCodeCompletedNotice: 'Готово: код записан, проверки прошли.',
       autoCodeNoAiKey: 'Сначала настройте ключ AI-провайдера.',
-      autoCodeRunInProgress: 'Автокодинг уже занят одной задачей.',
+      autoCodeRunInProgress: 'Авто-режим уже занят одной задачей.',
       statusLabel: 'Статус задачи',
       tasksCount: 'задач',
       addTaskModalTitle: 'Новая задача',
@@ -1090,6 +1093,8 @@ export const translations: Record<Language, Translations> = {
       laneRenamePlaceholder: 'Название дорожки',
       laneHandle: 'Тянуть, чтобы сдвинуть зону',
       laneResize: 'Потянуть, чтобы растянуть зону',
+      removeFile: 'Убрать файл из задачи',
+      cardFiles: 'Файлы задачи',
       cardMenuRename: 'Переименовать задачу',
       cardRenamePlaceholder: 'Название задачи',
       colorSlate: 'Серый',
@@ -1290,16 +1295,14 @@ export const translations: Record<Language, Translations> = {
       importReRead: 'Прочитать заново'
     },
     apiSettings: {
-      title: 'Настройки API провайдеров',
-      subtitle: 'Вставьте свой ключ — он сразу начнёт использоваться, перезапуск не нужен.',
+      title: 'Настройки API',
       gemini: 'Google Gemini',
       openai: 'OpenAI',
       anthropic: 'Anthropic Claude',
       configured: 'Настроено',
-      notConfigured: 'Не настроено',
-      envNotice: 'Ключи можно задать и через переменные окружения (GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, NVIDIA_API_KEY) — они используются, пока в настройках не сохранён свой.',
-      fromApp: 'Подключён (из настроек)',
-      fromEnv: 'Подключён (переменная окружения)',
+      notConfigured: 'Нет ключа',
+      fromApp: 'Сохранён',
+      fromEnv: 'Из окружения',
       activeProvider: 'Активный провайдер',
       noProvider: 'ключей нет — работает локальный движок',
       keyPlaceholder: 'Вставьте ключ API',
@@ -1307,6 +1310,7 @@ export const translations: Record<Language, Translations> = {
       keyLabel: 'Ключ API',
       saveKey: 'Сохранить',
       saving: 'Сохраняю...',
+      editKey: 'Заменить',
       savedKey: 'Ключ сохранён и уже активен',
       testKey: 'Проверить',
       testing: 'Проверяю...',
@@ -1317,7 +1321,6 @@ export const translations: Record<Language, Translations> = {
       show: 'Показать',
       hide: 'Скрыть',
       getKey: 'Получить ключ',
-      localOnly: 'Ключи сохраняются только на этом компьютере (файл data/api-keys.json, права только для владельца) и отправляются исключительно самому провайдеру. В интерфейсе ключ показывается замаскированным.',
       prefixWarning: 'ключ не похож на ключ этого провайдера — проверьте, что скопировали нужный',
       reasonAuth: 'Провайдер отклонил этот ключ',
       reasonQuota: 'Ключ принят, но закончился лимит или квота',
@@ -1709,13 +1712,13 @@ export const translations: Record<Language, Translations> = {
       adaptPlanButton: 'Adapt Plan with AI',
       compilePrompt: 'Compile Prompt',
       compileShort: 'Prompt',
-      autoCodeButton: 'Auto-code: do it yourself',
-      autoCodeAllButton: 'Auto-code the whole plan: tasks one after another',
+      autoCodeButton: 'Auto',
+      autoCodeAllButton: 'Auto: the whole plan in turn',
       autoCodeRunning: 'AI is coding on its own',
       autoCodeFailedNotice: 'The checks failed — the last write could not be rolled back automatically; undo it in the files section.',
       autoCodeCompletedNotice: 'Done: the code is written and every check passed.',
       autoCodeNoAiKey: 'Configure an AI provider key first.',
-      autoCodeRunInProgress: 'Auto-code is already working on one task.',
+      autoCodeRunInProgress: 'The Auto run is already working on one task.',
       statusLabel: 'Task status',
       tasksCount: 'tasks',
       addTaskModalTitle: 'New Task',
@@ -1757,6 +1760,8 @@ export const translations: Record<Language, Translations> = {
       laneRenamePlaceholder: 'Lane name',
       laneHandle: 'Drag to move the zone',
       laneResize: 'Drag to stretch the zone',
+      removeFile: 'Remove this file from the task',
+      cardFiles: 'Files of this task',
       cardMenuRename: 'Rename this task',
       cardRenamePlaceholder: 'Task name',
       colorSlate: 'Grey',
@@ -1955,16 +1960,14 @@ export const translations: Record<Language, Translations> = {
       importReRead: 'Read again'
     },
     apiSettings: {
-      title: 'API Provider Settings',
-      subtitle: 'Paste your key — it becomes active immediately, no restart required.',
+      title: 'API settings',
       gemini: 'Google Gemini',
       openai: 'OpenAI',
       anthropic: 'Anthropic Claude',
       configured: 'Configured',
-      notConfigured: 'Not Configured',
-      envNotice: 'You can also provide keys through environment variables (GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, NVIDIA_API_KEY) — they are used until a key is saved here.',
-      fromApp: 'Connected (saved here)',
-      fromEnv: 'Connected (environment variable)',
+      notConfigured: 'No key',
+      fromApp: 'Saved',
+      fromEnv: 'From environment',
       activeProvider: 'Active provider',
       noProvider: 'no keys — the local engine is used',
       keyPlaceholder: 'Paste your API key',
@@ -1972,6 +1975,7 @@ export const translations: Record<Language, Translations> = {
       keyLabel: 'API key',
       saveKey: 'Save',
       saving: 'Saving...',
+      editKey: 'Replace',
       savedKey: 'Key saved and already active',
       testKey: 'Test',
       testing: 'Testing...',
@@ -1982,7 +1986,6 @@ export const translations: Record<Language, Translations> = {
       show: 'Show',
       hide: 'Hide',
       getKey: 'Get a key',
-      localOnly: 'Keys are stored only on this computer (data/api-keys.json, owner-only permissions) and are sent to the provider itself. The UI always shows them masked.',
       prefixWarning: 'this key does not look like a key for this provider — please double-check the copy',
       reasonAuth: 'The provider rejected this key',
       reasonQuota: 'Key accepted, but the quota or rate limit is exhausted',

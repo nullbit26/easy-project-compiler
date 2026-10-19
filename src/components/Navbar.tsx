@@ -2,6 +2,7 @@ import React from 'react';
 import { ProjectState, AgentType, AutonomyLevel, InterfaceMode } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { LayoutList, Menu } from 'lucide-react';
+import { Button, IconButton } from './ui/Button';
 
 interface NavbarProps {
   currentProject: ProjectState | null;
@@ -54,13 +55,12 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 min-h-14 py-1">
           {/* Mobile menu toggle & Active Project Selector */}
           <div className="flex items-center gap-3 min-w-0">
-            <button
+            <IconButton
+              label={t.navbar.toggleMenu}
+              icon={Menu}
+              className="md:hidden"
               onClick={onToggleMobileSidebar}
-              className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors cursor-pointer"
-              title={t.navbar.toggleMenu}
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+            />
 
           </div>
 
@@ -72,15 +72,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               revealing the sections in the sidebar shows the screens but keeps the interface guided.
             */}
             {currentProject && simpleMode && onSelectInterfaceMode && (
-              <button
-                type="button"
-                onClick={() => onSelectInterfaceMode('full')}
+              <Button
+                variant="accent"
+                size="xs"
+                icon={LayoutList}
                 title={t.mode.interfaceFullHint}
-                className="flex items-center gap-1.5 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 rounded-lg px-2.5 py-1 text-xs font-semibold text-sky-300 transition-colors cursor-pointer"
+                onClick={() => onSelectInterfaceMode('full')}
               >
-                <LayoutList className="w-3.5 h-3.5 shrink-0" />
-                <span>{t.mode.interfaceFull}</span>
-              </button>
+                {t.mode.interfaceFull}
+              </Button>
             )}
           </div>
         </div>

@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { autonomyOf } from '../utils/workingMode';
 import { Bug, Sparkles, Copy, Check, ArrowRight, ShieldAlert, Cpu, Code2, Loader2, Layers, HelpCircle, AlertTriangle } from 'lucide-react';
 import { useCopyFlash } from '../utils/copyText';
+import { Button } from './ui/Button';
 
 interface VisualErrorCoachProps {
   project: ProjectState | null;
@@ -55,7 +56,7 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
         {onOpenNewProjectModal && (
           <button
             onClick={onOpenNewProjectModal}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-indigo-500"
           >
             <Sparkles className="w-4 h-4" />
             <span>{t.common.newProject}</span>
@@ -127,9 +128,9 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 @3xl:grid-cols-12 gap-6">
         {/* Left Column: Input Error Text & Sample Presets (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
+        <div className="@3xl:col-span-5 space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
             <label className="text-xs font-bold text-slate-200">{t.coach.errorInputLabel}</label>
 
@@ -164,7 +165,7 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
             <button
               onClick={handleDiagnose}
               disabled={isDiagnosing}
-              className="w-full bg-rose-600 enabled:hover:bg-rose-500 text-white font-bold text-xs py-3 rounded-lg transition-all shadow-md flex items-center justify-center gap-2 enabled:cursor-pointer disabled:opacity-50"
+              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-rose-600 text-xs font-medium text-white transition-colors enabled:hover:bg-rose-500 disabled:pointer-events-none disabled:opacity-50"
             >
               {isDiagnosing ? (
                 <>
@@ -182,7 +183,7 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
         </div>
 
         {/* Right Column: Visual Error Card & Diagnosis Output (7 cols) */}
-        <div className="lg:col-span-7 space-y-4">
+        <div className="@3xl:col-span-7 space-y-4">
           {diagnosis ? (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5">
               {/* Card Header: Error Name & Location */}
@@ -226,7 +227,7 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
                     onClick={() => setExplanationLevel('clear')}
                     className={`py-1.5 rounded-md transition-all cursor-pointer ${
                       explanationLevel === 'clear'
-                        ? 'bg-indigo-600 text-white shadow-sm'
+                        ? 'bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-white shadow-sm'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
@@ -263,7 +264,7 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-slate-200 block">{t.coach.rootCauseTitle}</span>
                   <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+                    <div className="flex flex-col @xl:flex-row items-center justify-between gap-2 text-xs">
                       {diagnosis.visualCauseChain.map((node, idx) => (
                         <React.Fragment key={idx}>
                           <div className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-center flex-1 w-full space-y-0.5">
@@ -292,7 +293,7 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
                     {onApplyFixToCode && (
                       <button
                         onClick={() => onApplyFixToCode?.(diagnosis.codeDiff!.filePath, diagnosis.codeDiff!.oldCode, diagnosis.codeDiff!.newCode)}
-                        className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-xs font-medium text-white transition-colors hover:bg-emerald-600"
                       >
                         <Check className="w-3.5 h-3.5" />
                         <span>{t.coach.applyFixButton}</span>
@@ -335,7 +336,7 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
 
                   <button
                     onClick={handleCopyFixPrompt}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] px-3 text-xs font-medium text-white transition-colors hover:bg-indigo-500"
                   >
                     {fixCopy.state === 'copied' ? (
                       <Check className="w-3.5 h-3.5 text-emerald-300" />
@@ -361,7 +362,7 @@ PlayerStats.DepleteHunger () (at Assets/Features/Player/PlayerStats.cs:88)`
                 {onSendFixToCompiler && (
                   <button
                     onClick={() => onSendFixToCompiler(diagnosis.repairPrompt)}
-                    className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-slate-800/80 text-xs font-medium text-slate-200 ring-1 ring-inset ring-slate-700/80 transition-colors hover:bg-slate-700/80 hover:text-white"
                   >
                     <span>{t.coach.sendFixToCompilerButton}</span>
                     <ArrowRight className="w-3.5 h-3.5" />

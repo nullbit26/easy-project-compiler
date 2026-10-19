@@ -37,9 +37,11 @@ import { GitPanel } from './GitPanel';
 import { CheckpointTimeline } from './CheckpointTimeline';
 import { diffHunks, diffLines, diffStat } from '../utils/simpleDiff';
 import { formatBytes, weightDetailLine, weightLine } from '../utils/byteSize';
+import { TASK_FILE_DRAG_TYPE } from '../utils/taskFiles';
+import { Button, IconButton, buttonClass } from './ui/Button';
+import { HelpHint } from './ui/HelpHint';
 import {
   AlertTriangle,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   FileCode,
@@ -50,7 +52,6 @@ import {
   Save,
   Search,
   SearchCheck,
-  ShieldAlert,
   Sparkles,
   Undo2,
   Wand2,
@@ -64,6 +65,17 @@ interface ProjectWorkspaceProps {
 }
 
 const MAX_CONTEXT_FILES = 8;
+
+/**
+ * One surface, not a stack of plates.
+ *
+ * The folder, the list, the editor, the generator and the three panels under them used to be a card
+ * inside a card inside a card — the screen was a fence of rounded rectangles and the eye had to find
+ * the content inside two borders. A window already has an edge (its own frame or the pane's
+ * header), so the blocks inside are separated by a hairline and air: `SECTION` is that rule, and no
+ * block draws a border of its own.
+ */
+const SECTION = 'border-t border-slate-800/70 pt-5';
 
 /**
  * What to say about the tidy-up after a write, in one line — and nothing at all when there is
@@ -702,53 +714,27 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             : 'Pick or create a project, then connect the folder with its files on disk.'}
         </p>
         {onOpenNewProjectModal && (
-          <button
-            onClick={onOpenNewProjectModal}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>{ru ? 'Новый проект' : 'New project'}</span>
-          </button>
+          <Button variant="primary" size="md" icon={Sparkles} onClick={onOpenNewProjectModal}>
+            {ru ? 'Новый проект' : 'New project'}
+          </Button>
         )}
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-700 text-white flex items-center justify-center font-extrabold text-sm shadow-md shrink-0">
-            <HardDrive className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm sm:text-base font-bold text-white">
-                {ru ? 'Файлы проекта на диске' : 'Project Files on Disk'}
-              </h2>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 font-bold">
-                {ru ? 'Создаёт и правит файлы' : 'Creates & edits files'}
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">
-              {ru
-                ? 'Подключите папку с проектом: приложение прочитает реальные файлы и запишет код, который вы одобрите.'
-                : 'Connect your project folder: the app reads the real files and writes the code you approve.'}
-            </p>
-          </div>
-        </div>
-        {/* The path is printed once, in the folder panel below, with the folder's state next to it.
-            Here it was a second copy of the same long line, three centimetres above the first. */}
-      </div>
-
+    <div className="space-y-5">
       {errorMsg && (
         <div className="bg-rose-500/10 rounded-xl px-4 py-3 text-xs text-rose-200 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>{errorMsg}</span>
-          <button onClick={() => setErrorMsg('')} className="ml-auto text-rose-300 hover:text-white cursor-pointer">
-            <X className="w-3.5 h-3.5" />
-          </button>
+          <IconButton
+            label={ru ? 'Скрыть' : 'Dismiss'}
+            icon={X}
+            size="xs"
+            className="ml-auto"
+            onClick={() => setErrorMsg('')}
+          />
         </div>
       )}
 
@@ -762,18 +748,43 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         folder, and disconnecting it (whose way back is the folder the project was created with,
         not a picker).
       */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-            <FolderOpen className="w-4 h-4 text-emerald-400" />
-            {ru ? 'Папка проекта' : 'Project folder'}
-          </h3>
-          {root && (
-            <div className="flex items-center gap-2">
+      {/*
+        The folder, stated the way the studio states it: the path, a count and the actions — no
+        heading over them, no green tick. "Connected" is the path being here at all; a checkmark
+        and a colour said it a second time, and the green was the loudest thing on a screen that
+        otherwise only lists files.
+      */}
+      <div className="space-y-3">
+        {root ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-slate-400">
+                <span className="text-slate-300">
+                  {ru ? 'Папка подключена' : 'Folder connected'}
+                </span>
+                <span>
+                  {ru ? 'Файлов' : 'Files'}: <span className="tabular-nums text-slate-400">{files.length}</span>
+                </span>
+                {/* The safety of writing into this folder is a fact about the app, not a state of
+                    the folder: it belongs in the mark's tooltip, not in a paragraph under the row. */}
+                <HelpHint
+                  text={
+                    ru
+                      ? 'Приложение работает только внутри подключённой папки, никогда не читает .env и ключи, а перед каждой записью сохраняет копию — изменения можно откатить одной кнопкой.'
+                      : 'The app only works inside the connected folder, never reads .env files or keys, and backs every file up before writing — any change can be undone in one click.'
+                  }
+                />
+              </div>
+              {/* The whole path stays reachable in the tooltip, so a long one cannot break the card. */}
+              <p className="truncate font-mono text-[11px] text-slate-400" title={root}>
+                {root}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={handleRescan}
                 disabled={isScanning}
-                className="text-[11px] font-bold bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-50 text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center gap-1.5"
+                className={buttonClass({ variant: 'secondary', size: 'xs' })}
               >
                 {isScanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                 <span>{ru ? 'Обновить список' : 'Rescan'}</span>
@@ -781,7 +792,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
               {onSyncProjectFiles && (
                 <button
                   onClick={handleSyncToProject}
-                  className="text-[11px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                  className={buttonClass({ variant: 'primary', size: 'xs' })}
                 >
                   <SearchCheck className="w-3.5 h-3.5" />
                   <span>{ru ? 'Использовать в проекте' : 'Use in project'}</span>
@@ -789,34 +800,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
               )}
               <button
                 onClick={handleDisconnect}
-                className="text-[11px] font-bold bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-200 px-2.5 py-1.5 rounded-lg border border-slate-700 transition-colors cursor-pointer"
+                className={buttonClass({ variant: 'ghost', size: 'xs', className: 'hover:text-rose-300' })}
               >
                 {ru ? 'Отключить' : 'Disconnect'}
               </button>
             </div>
-          )}
-        </div>
-
-        {root ? (
-          <div className="flex items-center gap-3 rounded-lg bg-slate-950/60 px-3 py-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <div className="min-w-0 flex-1 space-y-0.5">
-              <div className="flex flex-wrap items-baseline gap-x-2">
-                <span className="text-xs font-bold text-emerald-300">
-                  {ru ? 'Папка подключена' : 'Folder connected'}
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  {ru ? 'Файлов' : 'Files'}: <span className="font-bold text-slate-300">{files.length}</span>
-                </span>
-              </div>
-              {/* The whole path stays reachable in the tooltip, so a long one cannot break the card. */}
-              <p className="text-[11px] font-mono text-slate-400 truncate" title={root}>
-                {root}
-              </p>
-            </div>
           </div>
         ) : (
-          <div className="rounded-lg bg-slate-950/60 px-3 py-2.5 space-y-2">
+          <div className="space-y-2">
             {project.workspaceRoot ? (
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
                 <span className="min-w-0">
@@ -826,7 +817,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 <button
                   onClick={() => handleBind(project.workspaceRoot)}
                   disabled={isBinding}
-                  className="text-emerald-300 enabled:hover:text-emerald-200 disabled:opacity-50 font-bold enabled:cursor-pointer shrink-0"
+                  className={buttonClass({ variant: 'accent', size: 'xs', className: 'shrink-0' })}
                 >
                   {isBinding ? (ru ? 'Подключаю…' : 'Connecting…') : ru ? 'Подключить её' : 'Connect it'}
                 </button>
@@ -842,7 +833,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             {!project.workspaceRoot && onOpenNewProjectModal && (
               <button
                 onClick={onOpenNewProjectModal}
-                className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                className={buttonClass({ variant: 'secondary', size: 'xs' })}
+
               >
                 <FolderOpen className="w-3.5 h-3.5" />
                 <span>{ru ? 'Создать проект с папкой' : 'Create a project with a folder'}</span>
@@ -851,20 +843,12 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
           </div>
         )}
 
-        <div className="text-[11px] text-slate-400 flex items-start gap-2">
-          <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
-          <span>
-            {ru
-              ? 'Приложение работает только внутри подключённой папки, никогда не читает .env и ключи, а перед каждой записью сохраняет копию — изменения можно откатить одной кнопкой.'
-              : 'The app only works inside the connected folder, never reads .env files or keys, and backs every file up before writing — any change can be undone in one click.'}
-          </span>
-        </div>
       </div>
 
       {root && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 gap-x-6 gap-y-5 @3xl:grid-cols-12">
           {/* File tree */}
-          <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div className={`@3xl:col-span-5 space-y-3 ${SECTION}`}>
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                 {ru ? 'Файлы в папке' : 'Files in folder'} ({files.length})
@@ -879,6 +863,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
               <input
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
+                aria-label={ru ? 'Поиск по имени файла' : 'Search file name'}
                 placeholder={ru ? 'Поиск по имени файла…' : 'Search file name…'}
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-2 text-xs text-slate-200 focus:border-indigo-600"
               />
@@ -897,7 +882,17 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 return (
                   <div
                     key={file.path}
-                    className={`p-2 rounded-lg text-xs flex items-center gap-2 transition-colors ${
+                    /* A row is also what a card's AI context can be built from: drag it onto the
+                       plan and the path is added there. The hint is the tooltip, not a line in
+                       the list. */
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData(TASK_FILE_DRAG_TYPE, file.path);
+                      event.dataTransfer.setData('text/plain', file.path);
+                      event.dataTransfer.effectAllowed = 'copy';
+                    }}
+                    title={ru ? 'Перетащите на карточку плана' : 'Drag onto a plan card'}
+                    className={`p-2 rounded-lg text-xs flex items-center gap-2 transition-colors cursor-grab active:cursor-grabbing ${
                       isOpen
                         ? 'bg-indigo-500/10'
                         : 'hover:bg-slate-950/60'
@@ -948,10 +943,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
           </div>
 
           {/* Viewer + AI edits */}
-          <div className="lg:col-span-7 space-y-5">
+          <div className="@3xl:col-span-7 space-y-5">
             {openedFile && (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+              <div className={`space-y-2 ${SECTION}`}>
+                <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <h4 className="text-xs font-bold text-white font-mono truncate">{openedFile.path}</h4>
                     <span className="text-[10px] text-slate-400">
@@ -963,17 +958,17 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     <button
                       onClick={handleSaveFile}
                       disabled={isSavingFile || fileDraft === openedFile.content}
-                      className="text-[11px] font-bold bg-emerald-700 enabled:hover:bg-emerald-600 disabled:opacity-40 text-white px-2.5 py-1.5 rounded-lg transition-colors enabled:cursor-pointer inline-flex items-center gap-1.5"
+                      className={buttonClass({ variant: 'success', size: 'xs' })}
                     >
                       {isSavingFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                       <span>{ru ? 'Сохранить в файл' : 'Save to file'}</span>
                     </button>
-                    <button
+                    <IconButton
+                      label={ru ? 'Закрыть файл' : 'Close the file'}
+                      icon={X}
+                      size="xs"
                       onClick={() => setOpenedFile(null)}
-                      className="text-slate-400 hover:text-white cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    />
                   </div>
                 </div>
                 {isLoadingFile ? (
@@ -993,8 +988,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             )}
 
             {/* AI edits */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+            <div className={`space-y-3 ${SECTION}`}>
+              <div className="flex items-center justify-between gap-2">
                 <div>
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
                     <Wand2 className="w-4 h-4 text-indigo-400" />
@@ -1006,12 +1001,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
               <input
                 value={taskTitle}
                 onChange={(e) => setTaskTitle(e.target.value)}
+                aria-label={ru ? 'Задача для генерации изменений' : 'Task for generated changes'}
                 placeholder={ru ? 'Задача: например «Добавить механику голода»' : 'Task: e.g. "Add a hunger mechanic"'}
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:border-indigo-600"
               />
               <textarea
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
+                aria-label={ru ? 'Уточнения к задаче' : 'Extra instructions'}
                 rows={2}
                 placeholder={
                   ru
@@ -1024,7 +1021,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
               <button
                 onClick={handleGenerate}
                 disabled={isGenerating}
-                className="w-full bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-60 text-white font-bold text-xs px-4 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center justify-center gap-2"
+                className={buttonClass({ variant: 'primary', size: 'md', className: 'w-full' })}
               >
                 {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 <span>
@@ -1189,7 +1186,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                       <button
                         onClick={handleApply}
                         disabled={isApplying}
-                        className="w-full bg-emerald-700 enabled:hover:bg-emerald-600 disabled:opacity-60 text-white font-bold text-xs px-4 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center justify-center gap-2"
+                        className={buttonClass({ variant: 'success', size: 'md', className: 'w-full' })}
                       >
                         {isApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         <span>
@@ -1214,7 +1211,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     <button
                       onClick={() => handleUndo(applyResult.backupId)}
                       disabled={isUndoing}
-                      className="text-[11px] font-bold bg-slate-800 enabled:hover:bg-rose-900/60 disabled:opacity-50 text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center gap-1.5"
+                      className={buttonClass({ variant: 'secondary', size: 'xs' })}
                     >
                       {isUndoing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Undo2 className="w-3.5 h-3.5" />}
                       <span>{ru ? 'Отменить это применение' : 'Undo this apply'}</span>
@@ -1269,7 +1266,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                       <button
                         onClick={() => handleUndo(backup.id)}
                         disabled={isUndoing}
-                        className="text-slate-300 enabled:hover:text-white font-bold enabled:cursor-pointer disabled:opacity-50"
+                        className={buttonClass({ variant: 'ghost', size: 'xs' })}
                       >
                         {ru ? 'Вернуть' : 'Restore'}
                       </button>

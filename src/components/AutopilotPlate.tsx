@@ -8,6 +8,8 @@ import {
   streamAutonomousRun,
   type PipelineTaskInput
 } from '../services/api';
+import { autopilotFeed } from '../services/autopilotFeed';
+import { IconButton } from './ui/Button';
 
 interface ProjectState {
   name?: string;
@@ -27,6 +29,14 @@ interface AutopilotPlateProps {
     /** Called exactly when the server reached a verdict for each task. */
     onTaskDone?: (done: { taskId: string; result: 'completed' | 'failed' }) => void;
   };
+  /**
+   * Run without a plate of its own, because another window already shows the log.
+   *
+   * The studio's terminal pane reads the shared feed, so a floating box over the split would be
+   * the same lines twice, covering the board it is talking about. In this mode the component only
+   * starts the run and publishes it.
+   */
+  docked?: boolean;
 }
 
 /**
@@ -38,7 +48,7 @@ interface AutopilotPlateProps {
  * back on the server, and the client marks each plan card completed from the server's verdict,
  * not from a guess. A failed task stops the queue — the tasks behind it usually depend on it.
  */
-export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, onClose, pipeline }) => {
+export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, onClose, pipeline, docked }) => {
   const { language, t } = useLanguage();
   const ru = language !== 'en';
   const [lines, setLines] = useState<string[]>([]);
@@ -69,11 +79,18 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
       streamAutonomousRun(event.runId, (taskEvent) => {
         if (!alive) return;
         if (taskEvent.attempt) setAttemptCount(taskEvent.attempt);
-        setLines((prev) => [...prev, lineFor(taskEvent, ru, t)]);
+        const taskLine = lineFor(taskEvent, ru, t);
+        setLines((prev) => [...prev, taskLine]);
+        autopilotFeed.push(taskEvent, taskLine);
         if (
           taskEvent.type === 'run_completed' ||
           taskEvent.type === 'run_failed'
         ) {
+          setDoneCount((count) => {
+            const next = count + 1;
+            autopilotFeed.markDone(next, pipeline?.tasks.length || 1);
+            return next;
+          });
           verdictRef.current?.({
             taskId: taskIdOf(taskEvent.runId),
             result: taskEvent.type === 'run_completed' ? 'completed' : 'failed'
@@ -84,6 +101,13 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
 
     const start = async () => {
       try {
+        /*
+         * The log outlives this plate: the studio's terminal window reads it, and it is opened
+         * from a different window than the one the run was started in. The plate clears it here,
+         * once per run, so the terminal always shows the run it is watching rather than a pile of
+         * every earlier one.
+         */
+        autopilotFeed.begin({ title: task.title, total: pipeline?.tasks.length || 1 });
         if (pipeline) {
           setTotalCount(pipeline.tasks.length);
           const created = await startPipelineApi({
@@ -95,19 +119,30 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
           });
           if (!alive) return;
           setDoneCount(0);
-          setLines((prev) => [
-            ...prev,
-            ru
-              ? `Конвейер запущен: ${created.queued} задач(и) в очереди, каждая берётся после вердикта предыдущей.`
-              : `Pipeline started: ${created.queued} task(s) queued, each taken after the previous verdict.`
-          ]);
+          autopilotFeed.markDone(0, pipeline.tasks.length);
+          const startedLine = ru
+            ? `Конвейер запущен: ${created.queued} задач(и) в очереди, каждая берётся после вердикта предыдущей.`
+            : `Pipeline started: ${created.queued} task(s) queued, each taken after the previous verdict.`;
+          setLines((prev) => [...prev, startedLine]);
+          autopilotFeed.push(
+            {
+              runId: (created as { runId?: string }).runId || 'pipeline',
+              seq: -1,
+              type: 'run_started',
+              at: new Date().toISOString(),
+              text: startedLine
+            },
+            startedLine
+          );
           // Every attempt/task event that arrives through the stream of this very pipeline
           // opens a live view of that task's own run — and reports its verdict when it ends.
           // The plate streams the pipeline id the server minted; each task's verdict then
           // arrives through the task's own run id, which the pipeline event announces.
           stream = streamAutonomousRun((created as { runId?: string }).runId || 'pipe-unknown', (event: AutonomousEvent) => {
             if (!alive) return;
-            setLines((prev) => [...prev, lineFor(event, ru, t)]);
+            const translated = lineFor(event, ru, t);
+            setLines((prev) => [...prev, translated]);
+            autopilotFeed.push(event, translated);
             if (
               event.type === 'attempt_started' &&
               event.runId !== ((event.detail as unknown as { runId?: string })?.runId || event.runId)
@@ -130,18 +165,28 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
         });
         if (!alive) return;
         setMaxAttempts(created.maxAttempts);
+        autopilotFeed.configure({ maxAttempts: created.maxAttempts, total: 1 });
         stream = streamAutonomousRun(created.runId, (event: AutonomousEvent) => {
           if (!alive) return;
           if (event.attempt) setAttemptCount(event.attempt);
           const translated = lineFor(event, ru, t);
           setLines((prev) => [...prev, translated]);
-          if (event.type === 'run_completed') setEnded('completed');
-          if (event.type === 'run_failed') setEnded('failed');
+          autopilotFeed.push(event, translated);
+          if (event.type === 'run_completed') {
+            setEnded('completed');
+            autopilotFeed.finish('completed');
+          }
+          if (event.type === 'run_failed') {
+            setEnded('failed');
+            autopilotFeed.finish('failed');
+          }
         });
       } catch (err: any) {
         if (!alive) return;
-        setLines([err?.userMessage || err?.message || (ru ? 'Запуск не удался.' : 'The run could not start.')]);
+        const failure = err?.userMessage || err?.message || (ru ? 'Запуск не удался.' : 'The run could not start.');
+        setLines([failure]);
         setEnded('failed');
+        autopilotFeed.fail(failure);
       }
     };
 
@@ -180,6 +225,8 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
     ? t.plan.autoCodeCompletedNotice
     : t.plan.autoCodeFailedNotice;
 
+  if (docked) return null;
+
   return (
     <div
       data-testid="autopilot-plate"
@@ -195,14 +242,7 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
           />
           {statusLine}
         </span>
-        <button
-          onClick={onClose}
-          title={t.common.cancel}
-          aria-label={t.common.cancel}
-          className="w-6 h-6 grid place-items-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+        <IconButton label={t.common.cancel} icon={X} size="xs" onClick={onClose} />
       </div>
 
       <div

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Copy, Minus, Square, X } from 'lucide-react';
+import { Copy, Minus, Plus, Square, X } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { IconButton } from './ui/Button';
 import logo from '../assets/epc-logo.webp';
 
 /** The bridge electron/preload.ts puts on the page; absent when the page runs in a browser. */
@@ -24,22 +25,33 @@ const DRAG = { WebkitAppRegion: 'drag' } as React.CSSProperties;
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
 
 /**
- * The window's title bar, drawn by the app instead of by Windows.
+ * The strip above the workspace, drawn by the app instead of by Windows.
  *
- * The desktop window has no system frame (see electron/main.ts), so the top of the window is the
- * same dark surface as everything under it — which is also why this bar has to carry the app's mark,
- * its name, and the minimise/maximise/close buttons itself. The build the app is running is shown
- * once, in the sidebar footer, and not repeated up here. In a plain browser build the bridge is
- * missing and only the mark and the name are shown.
+ * It begins where the sidebar ends: the name and the mark live at the top of that full-height
+ * column, so this bar is only the window's controls and the one action that belongs to no screen.
+ * Its hairline therefore starts at the column's edge instead of running across the whole window and
+ * leaving the sidebar as a block that begins underneath a header.
  *
- * The mark is the launch screen's asset, not a second drawing of it: the picture the app opens with
- * is the picture that stays in the corner. It sits on nothing — the file's own transparent
- * background is the only backing it has — and it is never a drag handle for itself (`draggable`),
- * or pulling the window by the mark would start an image drag instead of moving the window. Its two
- * animations live in index.css and are ambient rather than an entrance: the bar is already mounted
- * behind the launch screen, so an entrance would have played out where nobody could see it.
+ * The desktop window has no system frame (see electron/main.ts), so this bar carries the
+ * minimise/maximise/close buttons itself. The build the app is running is shown once, in the sidebar
+ * footer, and not repeated up here. In a plain browser build the bridge is missing and the bar is
+ * empty on the right; with no screen to add beside, it draws nothing at all.
+ *
+ * The bar also carries the one screen action that is not a screen's own: the plus that opens another
+ * column beside the current one. It used to float in the top-right corner of the screen, where it sat
+ * on the content's scrollbar and had to be nudged for every screen that drew a full-bleed box. Here
+ * it costs no height (the bar is already there), it is outside every scrolling area, and the window
+ * controls keep a hairline of their own so the app's button is not read as another window control.
  */
-export const TitleBar: React.FC = () => {
+
+interface TitleBarProps {
+  /** Opens one more screen column beside the current one. Absent when the screen cannot host one. */
+  onOpenScreenBeside?: () => void;
+  /** At the pane ceiling: the plus stays in place, visibly spent, instead of disappearing. */
+  openScreenBesideDisabled?: boolean;
+}
+
+export const TitleBar: React.FC<TitleBarProps> = ({ onOpenScreenBeside, openScreenBesideDisabled = false }) => {
   const { language } = useLanguage();
   const ru = language === 'ru';
   const bridge = typeof window === 'undefined' ? undefined : window.desktopWindow;
@@ -70,22 +82,41 @@ export const TitleBar: React.FC = () => {
     <header
       data-testid="app-title-bar"
       style={DRAG}
-      className="h-9 shrink-0 flex items-stretch justify-between bg-slate-950 border-b border-slate-800/80 select-none"
+      className="h-9 shrink-0 flex items-stretch justify-end bg-slate-950 border-b border-slate-800/80 select-none"
     >
-      <div className="flex items-center gap-2 pl-3 min-w-0">
-        {/* The app's mark, breathing, with a glint that crosses it every few seconds. */}
-        <span data-testid="app-mark" className="title-mark shrink-0">
+      {/*
+        Narrow windows fold the sidebar into a drawer, which is also where the name and mark live.
+        Below that breakpoint they move up here, so the window never loses its name; side by side
+        with the column they are hidden, and the name is not printed twice.
+      */}
+      <div className="mr-auto flex items-center gap-2 pl-3 min-w-0 md:hidden">
+        <span className="title-mark shrink-0">
           <img src={logo} alt="" draggable={false} className="title-mark-img" />
-          <span
-            aria-hidden="true"
-            className="title-mark-sheen"
-            style={{ WebkitMaskImage: `url(${logo})`, maskImage: `url(${logo})` }}
-          />
         </span>
         <span className="text-[11px] font-semibold text-slate-300 truncate">Easy Project Compiler</span>
       </div>
 
       <div className="flex items-stretch" style={NO_DRAG}>
+        {onOpenScreenBeside && (
+          /*
+            A clear gap, no hairline: the plus is the app's action, and next to a 44 px minimise it
+            read as a fourth window control. Twenty pixels of the bar, owned by neither group, are
+            enough to say "not with those three".
+          */
+          <div className="flex items-center pl-1 pr-5">
+            {/* The studio's plus, size for size: `sm`, one 16 px glyph. */}
+            <IconButton
+              data-testid="title-bar-open-pane"
+              label={ru ? 'Открыть экран рядом' : 'Open a screen beside'}
+              icon={Plus}
+              size="sm"
+              onClick={onOpenScreenBeside}
+              disabled={openScreenBesideDisabled}
+              className="text-slate-400"
+            />
+          </div>
+        )}
+
         {bridge && (
           <>
             <button

@@ -17,6 +17,7 @@ import {
   runVerificationApi
 } from '../services/api';
 import { checkEvidenceHeadline, toCheckEvidence } from '../utils/checkEvidence';
+import { Button } from './ui/Button';
 
 interface ProjectCheckStripProps {
   /** The connected folder. Without one there is nothing to run, and nothing is shown. */
@@ -167,16 +168,16 @@ export const ProjectCheckStrip: React.FC<ProjectCheckStripProps> = ({
               {s.checksRunning}
             </span>
           ) : (
-            <button
-              type="button"
+            <Button
               data-check-run
+              variant="secondary"
+              size="xs"
+              icon={report ? RefreshCw : PlayCircle}
               onClick={() => void run()}
               disabled={isLoading || checks.length === 0}
-              className="text-[11px] font-bold bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-40 text-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center gap-1.5"
             >
-              {report ? <RefreshCw className="w-3.5 h-3.5" /> : <PlayCircle className="w-3.5 h-3.5" />}
-              <span>{report ? s.checksAgain : s.checksRun}</span>
-            </button>
+              {report ? s.checksAgain : s.checksRun}
+            </Button>
           )}
         </div>
       </div>

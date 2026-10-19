@@ -26,6 +26,7 @@ import { localizeText } from '../utils/textLocalizer';
 import { autonomyOf } from '../utils/workingMode';
 import { journeyHeading, journeyNumber } from '../utils/journeySteps';
 import { useCopyFlash } from '../utils/copyText';
+import { Button, IconButton } from './ui/Button';
 
 /**
  * The id of the task the compiler named when the plan could not take it — a project with no phases
@@ -320,21 +321,17 @@ export const SessionReview: React.FC<SessionReviewProps> = ({
   if (!project) {
     return (
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 short:p-5 text-center space-y-4 max-w-lg mx-auto my-12 short:my-2">
-        <div className="w-12 h-12 rounded-2xl bg-indigo-950 text-indigo-400 border border-indigo-800 flex items-center justify-center mx-auto">
-          <ShieldCheck className="w-6 h-6" />
+        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/12 text-indigo-300 ring-1 ring-inset ring-indigo-400/25">
+          <ShieldCheck className="h-5 w-5" />
         </div>
         <h3 className="text-lg font-bold text-white">{t.common.noProjectSelected}</h3>
         <p className="text-xs text-slate-400">
           {t.common.noProjectSubtext}
         </p>
         {onOpenNewProjectModal && (
-          <button
-            onClick={onOpenNewProjectModal}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>{t.common.newProject}</span>
-          </button>
+          <Button variant="primary" size="md" icon={Sparkles} onClick={onOpenNewProjectModal}>
+            {t.common.newProject}
+          </Button>
         )}
       </div>
     );
@@ -493,13 +490,13 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
    */
   const renderPromptGenerator = (isInitial = false) => (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800/70 pb-3 gap-3">
+      <div className="flex flex-col @xl:flex-row sm:items-center justify-between border-b border-slate-800/70 pb-3 gap-3">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
-            <Zap className="w-4 h-4" />
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-300 ring-1 ring-inset ring-indigo-400/25">
+            <Zap className="h-3.5 w-3.5" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider block">
+            <span className="block text-[10px] font-medium uppercase tracking-wider text-indigo-300">
               {isInitial ? t.review.initialPromptTitle : t.review.continuationPromptTitle}
             </span>
             <h3 className="text-sm font-bold text-white">
@@ -510,39 +507,39 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => handleCopyContinuationPrompt(getContinuationPromptText())}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-          >
-            {continuationCopy.state === 'copied' ? (
-              <Check className="w-3.5 h-3.5 text-emerald-300" />
-            ) : continuationCopy.state === 'failed' ? (
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
-            ) : (
-              <Copy className="w-3.5 h-3.5" />
-            )}
-            {/* The first card holds the first prompt, not a continuation of one. */}
-            <span>
-              {continuationCopy.state === 'copied'
-                ? t.common.copied
+          <Button
+            variant="primary"
+            size="sm"
+            icon={
+              continuationCopy.state === 'copied'
+                ? Check
                 : continuationCopy.state === 'failed'
-                ? t.common.copyFailed
-                : attempts.length === 0
-                ? t.review.copyPrompt
-                : t.review.copyContinuation}
-            </span>
-          </button>
+                ? AlertTriangle
+                : Copy
+            }
+            onClick={() => handleCopyContinuationPrompt(getContinuationPromptText())}
+          >
+            {/* The first card holds the first prompt, not a continuation of one. */}
+            {continuationCopy.state === 'copied'
+              ? t.common.copied
+              : continuationCopy.state === 'failed'
+              ? t.common.copyFailed
+              : attempts.length === 0
+              ? t.review.copyPrompt
+              : t.review.copyContinuation}
+          </Button>
 
           {onSendToCompiler && (
-            <button
-              onClick={() => onSendToCompiler(isInitial ? (activeTask?.title || '') : getContinuationPromptText())}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Sparkles}
+              trailing={ArrowRight}
               title={t.review.openInCompiler}
+              onClick={() => onSendToCompiler(isInitial ? (activeTask?.title || '') : getContinuationPromptText())}
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>{t.review.openInCompiler}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+              {t.review.openInCompiler}
+            </Button>
           )}
         </div>
       </div>
@@ -557,25 +554,27 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
             {getContinuationPromptText()}
           </div>
           {isInitial && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ChevronUp}
+              className="w-full"
               onClick={() => setShowInitialPrompt(false)}
-              className="w-full text-[11px] font-bold text-slate-300 hover:text-white bg-slate-800/50 hover:bg-slate-800 rounded-lg py-1.5 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
             >
-              <ChevronUp className="w-3.5 h-3.5" />
-              <span>{t.review.hidePrompt}</span>
-            </button>
+              {t.review.hidePrompt}
+            </Button>
           )}
         </>
       ) : (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={ChevronDown}
+          className="w-full"
           onClick={() => setShowInitialPrompt(true)}
-          className="w-full text-[11px] font-bold text-slate-300 hover:text-white bg-slate-800/50 hover:bg-slate-800 rounded-lg py-2 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
         >
-          <ChevronDown className="w-3.5 h-3.5" />
-          <span>{t.review.showPrompt}</span>
-        </button>
+          {t.review.showPrompt}
+        </Button>
       )}
     </div>
   );
@@ -629,32 +628,31 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
           </div>
 
           {attempts.length > 0 && (
-            <button
+            <IconButton
+              label={language === 'ru' ? 'Сбросить историю' : 'Reset history'}
+              icon={RotateCcw}
               onClick={handleResetHistory}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold px-3 py-2 rounded-xl transition-all border border-slate-700 flex items-center gap-1.5 cursor-pointer shrink-0"
-              title={language === 'ru' ? 'Сбросить историю' : 'Reset history'}
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>{language === 'ru' ? 'Сброс' : 'Reset'}</span>
-            </button>
+            />
           )}
 
           {onSendToCompiler && (
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Sparkles}
+              className="shrink-0"
               onClick={() => onSendToCompiler(activeTask?.title || '')}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer hover:border-indigo-500 shadow-sm shrink-0"
             >
-              <Sparkles className="w-4 h-4 text-indigo-400" />
               {/* Names the destination, so the way back is never a jump to an unnamed "step 1". */}
-              <span>← {journeyHeading('prompt', t)}</span>
-            </button>
+              ← {journeyHeading('prompt', t)}
+            </Button>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 @3xl:grid-cols-12 gap-6">
         {/* Left Column: Task & Input + History Timeline (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
+        <div className="@3xl:col-span-5 space-y-4">
           {/* Active Task Summary Card */}
           {activeTask && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
@@ -665,7 +663,7 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                 <h3 className="text-sm font-bold text-white">{activeTask.title}</h3>
                 <span
                   data-testid="task-status"
-                  className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold shrink-0 ${statusTone(activeTask.status)}`}
+                  className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${statusTone(activeTask.status)}`}
                 >
                   {statusLabel(activeTask.status)}
                 </span>
@@ -676,9 +674,9 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
               <div className="space-y-1">
                 <div className="flex justify-between text-[10px] font-mono text-slate-400">
                   <span>{language === 'ru' ? 'Готовность задачи:' : 'Task Completion:'}</span>
-                  <span className="text-indigo-300 font-bold">{activeTask.progressPercent}%</span>
+                  <span className="font-semibold text-indigo-300">{activeTask.progressPercent}%</span>
                 </div>
-                <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden">
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-950">
                   <div
                     className={`h-full transition-all duration-500 ${
                       activeTask.progressPercent >= 100
@@ -716,8 +714,8 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
           {/* Input Box for Current Step (e.g. Step 1 or Next Step) */}
           {(!forceReEvaluate && (reviewResult?.progressPercent === 100 || activeTask?.status === 'completed')) ? (
             <div className="bg-emerald-500/5 rounded-2xl p-5 text-center space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-5 h-5" />
+              <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-300 ring-1 ring-inset ring-emerald-400/25">
+                <CheckCircle2 className="h-4 w-4" />
               </div>
               <div>
                 <h4 className="text-sm font-bold text-emerald-200">
@@ -729,38 +727,37 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
               </div>
               <div className="flex flex-wrap justify-center gap-2 pt-1">
                 {nextTask && (
-                  <button
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={Sparkles}
+                    trailing={ArrowRight}
                     onClick={() => {
                       handleApplyStatus('completed');
                       if (onSendToCompiler) {
                         onSendToCompiler(nextTask.title);
                       }
                     }}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer"
                   >
-                    <Sparkles className="w-4 h-4 text-amber-300" />
-                    <span>{language === 'ru' ? `Скомпилировать следующую: ${nextTask.title}` : `Compile Next Task: ${nextTask.title}`} ➔</span>
-                  </button>
+                    {language === 'ru' ? `Следующая: ${nextTask.title}` : `Next: ${nextTask.title}`}
+                  </Button>
                 )}
                 {onOpenPreview && (
-                  <button
-                    onClick={onOpenPreview}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs px-3.5 py-2 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    <span>{t.review.openPreview}</span>
-                  </button>
+                  <Button variant="secondary" size="sm" icon={Play} onClick={onOpenPreview}>
+                    {t.review.openPreview}
+                  </Button>
                 )}
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={RotateCcw}
                   onClick={() => {
                     setReviewResult(null);
                     setForceReEvaluate(true);
                   }}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs px-3 py-2 rounded-xl transition-all border border-slate-700 flex items-center gap-1.5 cursor-pointer"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>{language === 'ru' ? 'Повторный анализ' : 'Re-evaluate'}</span>
-                </button>
+                  {language === 'ru' ? 'Повторный анализ' : 'Re-evaluate'}
+                </Button>
               </div>
             </div>
           ) : (
@@ -769,7 +766,7 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                 <label className="text-xs font-bold text-slate-200 block">
                   {t.review.pasteAgentOutputLabel}
                 </label>
-                <span className="text-[10px] bg-indigo-500/15 text-indigo-300 px-2 py-0.5 rounded font-mono font-bold">
+                <span className="rounded bg-indigo-500/15 px-2 py-0.5 font-mono text-[10px] font-medium text-indigo-300">
                   {t.review.attempt} #{attempts.length + 1}
                 </span>
               </div>
@@ -783,56 +780,42 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
               {extractedFiles.length > 0 && onUpdateProjectFiles && (
                 <div className="bg-indigo-500/10 rounded-lg p-2.5 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <FileCode className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <FileCode className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
                     <span className="text-[11px] text-slate-300 truncate">
                       {language === 'ru' ? `Найдено файлов: ${extractedFiles.length}` : `Detected ${extractedFiles.length} file(s)`}: {extractedFiles.map(f => f.path).join(', ')}
                     </span>
                   </div>
-                  <button
-                    type="button"
+                  <Button
+                    variant="accent"
+                    size="xs"
+                    icon={FileCode}
+                    className="shrink-0"
                     onClick={handleApplyFiles}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold px-2.5 py-1 rounded transition-all shrink-0 cursor-pointer flex items-center gap-1"
                   >
-                    {appliedFilesCount !== null ? (
-                      <>
-                        <Check className="w-3 h-3 text-emerald-300" />
-                        <span>{t.review.filesApplied}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-3 h-3" />
-                        <span>{t.review.applyFilesButton}</span>
-                      </>
-                    )}
-                  </button>
+                    {appliedFilesCount !== null ? t.review.filesApplied : t.review.applyFilesButton}
+                  </Button>
                 </div>
               )}
 
               <textarea
                 value={agentOutput}
                 onChange={(e) => setAgentOutput(e.target.value)}
+                aria-label={language === 'ru' ? 'Ответ агента' : 'Agent output'}
                 placeholder={t.review.pasteAgentPlaceholder}
                 rows={6}
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 focus:border-emerald-500 font-mono placeholder:text-slate-400"
               />
 
-              <button
+              <Button
+                variant="primary"
+                size="sm"
+                icon={isReviewing ? Loader2 : ShieldCheck}
+                className={`w-full ${isReviewing ? 'animate-pulse' : ''}`}
                 onClick={() => handleRunReview()}
                 disabled={isReviewing || !agentOutput.trim()}
-                className="w-full bg-emerald-700 enabled:hover:bg-emerald-600 text-white font-bold text-xs py-3 rounded-lg transition-all shadow-md flex items-center justify-center gap-2 enabled:cursor-pointer disabled:opacity-50"
               >
-                {isReviewing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{t.review.reviewing}</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>{t.review.runReviewButton}</span>
-                  </>
-                )}
-              </button>
+                {isReviewing ? t.review.reviewing : t.review.runReviewButton}
+              </Button>
             </div>
           )}
 
@@ -841,7 +824,7 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <div className="flex items-center gap-2">
-                  <History className="w-4 h-4 text-indigo-400" />
+                  <History className="h-3.5 w-3.5 text-indigo-400" />
                   <h4 className="text-xs font-bold text-slate-200">
                     {t.review.attemptHistoryTitle} ({attempts.length})
                   </h4>
@@ -863,11 +846,11 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                         className="w-full p-2.5 flex items-center justify-between text-left hover:bg-slate-900/60 cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono bg-indigo-500/15 text-indigo-300 px-2 py-0.5 rounded font-bold">
+                          <span className="rounded bg-indigo-500/15 px-2 py-0.5 font-mono text-[10px] font-medium text-indigo-300">
                             {t.review.attempt} #{attempt.attemptNumber}
                           </span>
                           <span
-                            className={`text-xs font-bold ${
+                            className={`text-xs font-semibold ${
                               percent >= 100
                                 ? 'text-emerald-400'
                                 : percent >= 50
@@ -884,9 +867,9 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                             {attempt.review.completedCriteria.length} {language === 'ru' ? 'критериев' : 'criteria'}
                           </span>
                           {isExpanded ? (
-                            <ChevronUp className="w-4 h-4 text-slate-400" />
+                            <ChevronUp className="h-3.5 w-3.5 text-slate-500" />
                           ) : (
-                            <ChevronDown className="w-4 h-4 text-slate-400" />
+                            <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
                           )}
                         </div>
                       </button>
@@ -916,13 +899,13 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
         </div>
 
         {/* Right Column: Review Results & Dynamic Continuation Prompt (7 cols) */}
-        <div className="lg:col-span-7 space-y-5">
+        <div className="@3xl:col-span-7 space-y-5">
           {reviewResult ? (
             <div className="space-y-5">
               {/* Verdict Card */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5">
                 {/* Top Status Badge & Progress */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                <div className="flex flex-col @xl:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                       {t.review.verdictTitle} · {t.review.attempt} #{attempts.length}
@@ -936,7 +919,7 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                           : t.review.verdictFail}
                       </h3>
                       <span
-                        className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
+                        className={`shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-medium ${
                           reviewResult.progressPercent >= 100
                             ? 'bg-emerald-500/10 text-emerald-300'
                             : reviewResult.progressPercent >= 50
@@ -978,49 +961,41 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                   {activeTask && !isOffPlanTask && (
                     <div className="flex flex-wrap gap-2">
                       {extractedFiles.length > 0 && onUpdateProjectFiles && (
-                        <button
-                          type="button"
-                          onClick={handleApplyFiles}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs px-3 py-2 rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <FileCode className="w-4 h-4 text-indigo-400" />
-                          <span>
-                            {appliedFilesCount !== null
-                              ? t.review.filesApplied
-                              : `${t.review.applyFilesButton} (${extractedFiles.length})`}
-                          </span>
-                        </button>
+                        <Button variant="secondary" size="sm" icon={FileCode} onClick={handleApplyFiles}>
+                          {appliedFilesCount !== null
+                            ? t.review.filesApplied
+                            : `${t.review.applyFilesButton} (${extractedFiles.length})`}
+                        </Button>
                       )}
                       {onOpenPreview && (
-                        <button
-                          onClick={onOpenPreview}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs px-3.5 py-2 rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Play className="w-4 h-4 fill-current" />
-                          <span>{t.review.openPreview}</span>
-                        </button>
+                        <Button variant="secondary" size="sm" icon={Play} onClick={onOpenPreview}>
+                          {t.review.openPreview}
+                        </Button>
                       )}
                       {nextTask && (reviewResult.progressPercent >= 100 || reviewResult.status === 'Completed') ? (
-                        <button
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          icon={Sparkles}
+                          trailing={ArrowRight}
                           onClick={() => {
                             handleApplyStatus('completed');
                             if (onSendToCompiler) {
                               onSendToCompiler(nextTask.title);
                             }
                           }}
-                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3.5 py-2 rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
                         >
-                          <Sparkles className="w-4 h-4 text-amber-300" />
-                          <span>{t.review.markCompletedAndNext} ➔</span>
-                        </button>
+                          {t.review.markCompletedAndNext}
+                        </Button>
                       ) : (
-                        <button
+                        <Button
+                          variant="success"
+                          size="sm"
+                          icon={CheckCircle2}
                           onClick={() => handleApplyStatus('completed')}
-                          className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs px-3.5 py-2 rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
                         >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>{t.review.markCompleted}</span>
-                        </button>
+                          {t.review.markCompleted}
+                        </Button>
                       )}
                     </div>
                   )}
@@ -1030,9 +1005,9 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-xs font-semibold">
                     <span className="text-slate-300">{t.review.measuredProgress}</span>
-                    <span className="text-indigo-400 font-bold">{reviewResult.progressPercent}%</span>
+                    <span className="font-semibold text-indigo-300">{reviewResult.progressPercent}%</span>
                   </div>
-                  <div className="w-full bg-slate-950 rounded-full h-3 overflow-hidden p-0.5">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-950">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
                         reviewResult.progressPercent >= 100
@@ -1052,11 +1027,11 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                 </p>
 
                 {/* Passed vs Missing Criteria Breakdown */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 @xl:grid-cols-2 gap-4">
                   {/* Passed */}
-                  <div className="bg-slate-950 border border-emerald-900/60 rounded-xl p-3 space-y-2">
-                    <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-3">
+                    <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-emerald-300">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
                       <span>{t.review.criteriaTitle} ({reviewResult.completedCriteria.length})</span>
                     </span>
                     <ul className="text-xs text-slate-200 space-y-1">
@@ -1065,7 +1040,7 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                       ) : (
                         reviewResult.completedCriteria.map((c, i) => (
                           <li key={i} className="flex items-start gap-1.5">
-                            <span className="text-emerald-400 font-bold">•</span>
+                            <span className="text-emerald-400">•</span>
                             <span>{c}</span>
                           </li>
                         ))
@@ -1074,9 +1049,9 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                   </div>
 
                   {/* Missing */}
-                  <div className="bg-slate-950 border border-amber-900/60 rounded-xl p-3 space-y-2">
-                    <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <XCircle className="w-4 h-4 text-amber-400" />
+                  <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-3">
+                    <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-amber-300">
+                      <XCircle className="h-3.5 w-3.5 text-amber-500" />
                       <span>{language === 'ru' ? 'Оставшиеся критерии' : 'Remaining Criteria'} ({reviewResult.missingCriteria.length})</span>
                     </span>
                     <ul className="text-xs text-slate-300 space-y-1">
@@ -1085,7 +1060,7 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                       ) : (
                         reviewResult.missingCriteria.map((c, i) => (
                           <li key={i} className="flex items-start gap-1.5 text-amber-300">
-                            <span className="text-amber-400 font-bold">•</span>
+                            <span className="text-amber-400">•</span>
                             <span>{c}</span>
                           </li>
                         ))
@@ -1095,9 +1070,9 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                 </div>
 
                 {/* Next Best Action Callout */}
-                <div className="bg-indigo-950/80 border border-indigo-800 rounded-xl p-4 space-y-2">
-                  <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                <div className="space-y-2 rounded-xl border border-indigo-400/20 bg-indigo-500/[0.07] p-4">
+                  <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-indigo-300">
+                    <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
                     <span>{t.dashboard.nextAction}</span>
                   </span>
                   <p className="text-sm font-semibold text-white">{reviewResult.nextBestAction}</p>
@@ -1115,7 +1090,7 @@ INSTRUCTIONS FOR AI AGENT (${t.review.attempt} #${nextStep}):
                 renderPromptGenerator(true)
               ) : (
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center text-slate-400 space-y-3">
-                  <ShieldCheck className="w-10 h-10 text-slate-400 mx-auto" />
+                  <ShieldCheck className="mx-auto h-9 w-9 text-slate-500" />
                   <h3 className="text-sm font-bold text-slate-200">{language === 'ru' ? 'Анализ еще не запущен' : 'No Review Performed Yet'}</h3>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
                     {language === 'ru' ? 'Вставьте вывод агента слева и запустите анализ сессии.' : 'Paste your AI agent output on the left and run analysis.'}

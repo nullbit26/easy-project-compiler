@@ -5,6 +5,19 @@ import { ProjectProvider, useProject } from './context/ProjectContext';
 import { isGuidedInterface } from './utils/workingMode';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
+import { WorkspacePane } from './components/workspace/WorkspacePane';
+import {
+  addPane,
+  MAX_EXTRA_PANES,
+  parseWorkspace,
+  removePane,
+  serializeWorkspace,
+  setPanePath,
+  WORKSPACE_STORAGE_KEY,
+  type ScreenPath,
+  type WorkspaceState
+} from './components/workspace/workspaceLayout';
+import { adjustSizes } from './components/split/splitSizes';
 import { TitleBar } from './components/TitleBar';
 import { Dashboard } from './components/Dashboard';
 import { PromptCompiler } from './components/PromptCompiler';
@@ -13,6 +26,7 @@ import { VisualErrorCoach } from './components/VisualErrorCoach';
 import { CodePreviewRunner } from './components/CodePreviewRunner';
 import { PlanKanban } from './components/PlanKanban';
 import { PlanCanvas } from './components/PlanCanvas';
+import { StudioScreen } from './components/studio/StudioScreen';
 import { ProjectMap } from './components/ProjectMap';
 import { ProjectWorkspace } from './components/ProjectWorkspace';
 import { BriefView } from './components/BriefView';
@@ -26,12 +40,35 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { RulesWatchdog } from './components/RulesWatchdog';
 
 /** Screens that can be kept alive. Unknown paths fall back to the dashboard. */
-const TAB_PATHS = ['/', '/simple', '/compiler', '/review', '/preview', '/coach', '/plan', '/map', '/files', '/brief'] as const;
+const TAB_PATHS = ['/', '/simple', '/compiler', '/review', '/preview', '/coach', '/plan', '/studio', '/map', '/files', '/brief'] as const;
 type TabPath = (typeof TAB_PATHS)[number];
 
 function normalizeTabPath(pathname: string): TabPath | null {
   if (pathname === '/' || pathname === '/dashboard') return '/';
   return (TAB_PATHS as readonly string[]).includes(pathname) ? (pathname as TabPath) : null;
+}
+
+/**
+ * Whether the left panel is folded to its strip of icons. Remembered: a panel the user folded to
+ * read a wide board should not be unfolded again by the next start.
+ */
+const SIDEBAR_FOLDED_KEY = 'easy_project_compiler_sidebar_folded';
+
+function readSidebarFolded(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_FOLDED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** The panes opened beside the screens, remembered between sessions. */
+function readWorkspace(): WorkspaceState {
+  try {
+    return parseWorkspace(localStorage.getItem(WORKSPACE_STORAGE_KEY));
+  } catch {
+    return parseWorkspace(null);
+  }
 }
 
 function AppContent() {
@@ -67,6 +104,7 @@ function AppContent() {
     onAdaptProjectPhases,
     onUpdateTaskPositions,
     onUpdateTaskTitle,
+    onUpdateTaskFiles,
     onUpdateCanvasLanes
   } = useProject();
 
@@ -83,6 +121,29 @@ function AppContent() {
    * still one click away for whoever reads a plan as a list of stages.
    */
   const [planView, setPlanView] = useState<'canvas' | 'kanban'>('canvas');
+  /**
+   * The panes beside the routed screen. The route is always the first column — the sidebar stays
+   * the way screens are navigated — and these are the extra windows opened with the plus.
+   */
+  const [workspace, setWorkspace] = useState<WorkspaceState>(readWorkspace);
+  const [sidebarFolded, setSidebarFolded] = useState(readSidebarFolded);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_FOLDED_KEY, sidebarFolded ? '1' : '0');
+    } catch {
+      // Storage may be refused (private mode); the panel then keeps this shape for the session.
+    }
+  }, [sidebarFolded]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WORKSPACE_STORAGE_KEY, serializeWorkspace(workspace));
+    } catch {
+      // Storage may be refused (private mode); the row then lasts for this session only.
+    }
+  }, [workspace]);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -96,6 +157,7 @@ function AppContent() {
     if (path === '/review') return 'session_review';
     if (path === '/coach') return 'error_coach';
     if (path === '/plan') return 'project_plan';
+    if (path === '/studio') return 'studio';
     if (path === '/map') return 'project_map';
     if (path === '/files') return 'project_files';
     if (path === '/brief') return 'brief_architecture';
@@ -116,17 +178,36 @@ function AppContent() {
     setVisitedPaths((prev) => (prev.includes(activePath) ? prev : [...prev, activePath]));
   }, [activePath]);
 
+  /** The screen each sidebar entry names. */
+  const TAB_TO_PATH: Record<string, TabPath> = {
+    dashboard: '/',
+    simple_flow: '/simple',
+    prompt_compiler: '/compiler',
+    code_preview: '/preview',
+    session_review: '/review',
+    error_coach: '/coach',
+    project_plan: '/plan',
+    studio: '/studio',
+    project_map: '/map',
+    project_files: '/files',
+    brief_architecture: '/brief'
+  };
+
   const setActiveTab = (tabId: string) => {
-    if (tabId === 'dashboard') navigate('/');
-    else if (tabId === 'simple_flow') navigate('/simple');
-    else if (tabId === 'prompt_compiler') navigate('/compiler');
-    else if (tabId === 'code_preview') navigate('/preview');
-    else if (tabId === 'session_review') navigate('/review');
-    else if (tabId === 'error_coach') navigate('/coach');
-    else if (tabId === 'project_plan') navigate('/plan');
-    else if (tabId === 'project_map') navigate('/map');
-    else if (tabId === 'project_files') navigate('/files');
-    else if (tabId === 'brief_architecture') navigate('/brief');
+    const path = TAB_TO_PATH[tabId];
+    if (!path) return;
+    /*
+     * A screen is live once. Choosing in the sidebar a screen that is open in a pane brings it to
+     * the primary column and leaves the pane asking what goes there next — the alternative is two
+     * live boards (or two running previews) on one screen, each with its own selection.
+     */
+    if (path !== '/studio') {
+      setWorkspace((current) => {
+        const occupant = current.panes.find((pane) => pane.path === path);
+        return occupant ? setPanePath(current, occupant.id, null) : current;
+      });
+    }
+    navigate(path);
   };
 
   const guidedProject = isGuidedInterface(currentProject);
@@ -309,6 +390,7 @@ function AppContent() {
             onUpdateTaskStatus={onUpdateTaskStatus}
             onUpdateTaskPositions={onUpdateTaskPositions}
             onUpdateTaskTitle={onUpdateTaskTitle}
+            onUpdateTaskFiles={onUpdateTaskFiles}
             onUpdateCanvasLanes={onUpdateCanvasLanes}
             onCompileTaskPrompt={(taskTitle) => {
               setCompilerTaskTitle(taskTitle);
@@ -318,6 +400,7 @@ function AppContent() {
             onAdaptProjectPhases={onAdaptProjectPhases}
             onOpenNewProjectModal={() => setShowSetupModal(true)}
             onSwitchToKanban={() => setPlanView('kanban')}
+            onOpenStudio={() => navigate('/studio')}
             /* The pipeline's verdicts are the one way a task turns done without a click: what
                the server's checks said is what the plan now says. */
             onPipelineTaskDone={(taskId, result) => {
@@ -327,11 +410,11 @@ function AppContent() {
                 result === 'completed' ? 'completed' : 'blocked',
                 result === 'completed'
                   ? ru
-                    ? 'Задача выполнена автокодингом: проверки проекта прошли.'
-                    : 'Task completed by auto-code: project checks passed.'
+                    ? 'Задача выполнена в режиме «Авто»: проверки проекта прошли.'
+                    : 'Task completed by the Auto run: project checks passed.'
                   : ru
-                  ? 'Автокодинг не смог выполнить задачу: нужны ручные правки.'
-                  : 'Auto-code could not finish this task; fix it by hand.'
+                  ? 'Режим «Авто» не смог выполнить задачу: нужны ручные правки.'
+                  : 'The Auto run could not finish this task; fix it by hand.'
               );
             }}
           />
@@ -347,6 +430,42 @@ function AppContent() {
             onAdaptProjectPhases={onAdaptProjectPhases}
             onOpenNewProjectModal={() => setShowSetupModal(true)}
             onSwitchToCanvas={() => setPlanView('canvas')}
+          />
+        );
+      case '/studio':
+        return (
+          <StudioScreen
+            project={currentProject}
+            onUpdateTaskStatus={onUpdateTaskStatus}
+            onUpdateTaskPositions={onUpdateTaskPositions}
+            onUpdateTaskTitle={onUpdateTaskTitle}
+            onUpdateTaskFiles={onUpdateTaskFiles}
+            onUpdateCanvasLanes={onUpdateCanvasLanes}
+            onCompileTaskPrompt={(taskTitle) => {
+              setCompilerTaskTitle(taskTitle);
+              navigate('/compiler');
+            }}
+            onAddTask={onAddTask}
+            onAdaptProjectPhases={onAdaptProjectPhases}
+            onOpenNewProjectModal={() => setShowSetupModal(true)}
+            onSendErrorToCoach={(errText) => {
+              setCoachErrorText(errText);
+              navigate('/coach');
+            }}
+            onPipelineTaskDone={(taskId, result) => {
+              const ru = language !== 'en';
+              onUpdateTaskStatus(
+                taskId,
+                result === 'completed' ? 'completed' : 'blocked',
+                result === 'completed'
+                  ? ru
+                    ? 'Задача выполнена в режиме «Авто»: проверки проекта прошли.'
+                    : 'Task completed by the Auto run: project checks passed.'
+                  : ru
+                  ? 'Режим «Авто» не смог выполнить задачу: нужны ручные правки.'
+                  : 'The Auto run could not finish this task; fix it by hand.'
+              );
+            }}
           />
         );
       case '/map':
@@ -379,6 +498,51 @@ function AppContent() {
     }
   };
 
+  const ru = language === 'ru';
+
+  /** A live screen exists once: the ones already in the row are not offered a second time. */
+  const shownScreens: ScreenPath[] = [
+    ...workspace.panes.map((pane) => pane.path).filter((path): path is ScreenPath => Boolean(path)),
+    ...(activePath && activePath !== '/studio' ? [activePath as ScreenPath] : [])
+  ];
+
+  const openPane = () => setWorkspace((current) => addPane(current));
+  const closePane = (id: string) => setWorkspace((current) => removePane(current, id));
+  const chooseScreen = (id: string, path: ScreenPath) =>
+    setWorkspace((current) => setPanePath(current, id, path));
+  const clearScreen = (id: string) => setWorkspace((current) => setPanePath(current, id, null));
+
+  /** A divider trades percent with its neighbour, exactly like the studio's. */
+  const beginDividerDrag = (index: number, event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const box = rowRef.current?.getBoundingClientRect();
+    if (!box || box.width <= 0) return;
+    const origin = event.clientX;
+    const start = workspace.shares;
+    const move = (moveEvent: PointerEvent) => {
+      const delta = ((moveEvent.clientX - origin) / box.width) * 100;
+      setWorkspace((current) => ({ ...current, shares: adjustSizes(start, index, delta) }));
+    };
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+  };
+
+  const nudgeDivider = (index: number, event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const step = event.shiftKey ? 10 : 2;
+    setWorkspace((current) => ({
+      ...current,
+      shares: adjustSizes(current.shares, index, event.key === 'ArrowRight' ? step : -step)
+    }));
+  };
+
   /**
    * A dialog is up: the working area behind it is made inert, so the tab key cannot walk out of the
    * dialog and back into the page underneath it. `inert` also takes the whole background out of the
@@ -392,21 +556,41 @@ function AppContent() {
    * each side of a board is the largest room in the app spent on nothing. A board gets the whole
    * working window instead — full width, and the height that is left after the header.
    */
-  const planScreen = activePath === '/plan';
+  /*
+   * The plan and the studio are boards rather than documents: they get the whole working window,
+   * edge to edge, and never a centred reading column — a split layout with 192 px of empty window
+   * on each side would not be a split layout.
+   */
+  const fullBleedScreen =
+    activePath === '/plan' || activePath === '/studio' || activePath === '/preview';
 
-  /** How one screen's box is drawn: only the visible one is shown, and only the board grows. */
+  /** How one screen's box is drawn: only the visible one is shown, and the boards grow. */
   const screenClass = (path: string) => {
     if (path !== activePath) return 'hidden';
-    return path === '/plan' ? 'flex min-h-0 flex-1 flex-col' : undefined;
+    /*
+     * The boards and the sandbox grow to the window; a page keeps its measured reading column.
+     * The sandbox joined them because it is a workspace too: a split preview with a console under
+     * it is a pane, and a pane that stops at 64vh leaves the bottom of the window empty.
+     */
+    return path === '/plan' || path === '/studio' || path === '/preview'
+      ? 'flex min-h-0 flex-1 flex-col'
+      : undefined;
   };
 
   // The window itself never scrolls: the app fills it exactly, and only the working area moves.
   // That is what keeps the sidebar, the top bar and the app's own title bar in place.
   return (
-    <div className="h-screen overflow-hidden bg-slate-950 text-slate-100 font-sans antialiased selection:bg-indigo-500 selection:text-white flex flex-col">
-      <TitleBar />
-
-      <div className="flex flex-1 min-h-0 w-full" inert={modalOpen || undefined}>
+    <div className="h-screen overflow-hidden bg-slate-950 text-slate-100 font-sans antialiased selection:bg-indigo-500 selection:text-white flex">
+      {/**
+       * The sidebar is the window's one full-height column.
+       *
+       * It used to start under the title bar, which put a horizontal rule above it and made the
+       * project switcher a block floating between the rule and the groups beneath it. Now the
+       * column begins at the window's first pixel and owns the name and the mark, the way the
+       * panels of an editor do; the strip on the right is only the window's controls, and its
+       * hairline starts at the column's edge instead of crossing the whole window.
+       */}
+      <div className="flex h-full min-h-0 shrink-0" inert={modalOpen || undefined}>
       {/* Unified Left Sidebar (Projects + Workspace Tabs) */}
       <Sidebar
         allProjects={allProjects}
@@ -421,8 +605,26 @@ function AppContent() {
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         showAllPanels={showAllPanels}
         onToggleAllPanels={() => setShowAllPanels((prev) => !prev)}
+        collapsed={sidebarFolded}
+        onToggleCollapsed={() => setSidebarFolded((prev) => !prev)}
+      />
+      </div>
+
+      {/* The workspace column: window controls, then the screens, with no rule above the sidebar. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/*
+        The plus that adds a column beside the screen lives in the title bar, not in the screen's
+        corner: there it sat on the content's scrollbar, over the very panel the user wanted to read.
+        The bar is already there, so the control costs no height and never scrolls away.
+      */}
+      <TitleBar
+        onOpenScreenBeside={
+          currentProject && activePath && activePath !== '/studio' ? openPane : undefined
+        }
+        openScreenBesideDisabled={workspace.panes.length >= MAX_EXTRA_PANES}
       />
 
+      <div className="flex flex-1 min-h-0 w-full" inert={modalOpen || undefined}>
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Toast Notification */}
@@ -448,12 +650,26 @@ function AppContent() {
         />
 
         {/* Main Tab View Canvas — the only part of the window that scrolls. */}
+        <div className="flex flex-1 min-h-0 min-w-0" ref={rowRef}>
+          <div
+            className="relative flex min-h-0 min-w-0 flex-col"
+            style={{ flexGrow: workspace.shares[0] ?? 1, flexBasis: 0 }}
+          >
         <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden w-full">
           <div
             className={
-              planScreen
-                ? 'flex min-h-full w-full flex-col px-3 py-2 short:py-1.5'
-                : 'w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 short:py-2'
+              fullBleedScreen
+                ? /*
+                    `h-full`, not `min-h-full`: a pane reads its height from this box, and a box that
+                    only has a minimum leaves the pane to size itself from its content — which is
+                    how the sandbox ended up 455 px tall in an 808 px window, with the rest of the
+                    screen empty. The height is definite here, so the pane can fill it.
+                  */
+                  /* `@container`: the screens lay themselves out by the column they were given, not
+                     by the window — a screen in a pane beside another screen is narrower than the
+                     window and used to keep its three-column desktop grid inside 460 px. */
+                  '@container flex h-full w-full flex-col px-3 py-2 short:py-1.5'
+                : '@container w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 short:py-2'
             }
           >
             {/* A crash inside one screen must never blank the whole app. */}
@@ -475,6 +691,49 @@ function AppContent() {
             </ErrorBoundary>
           </div>
         </main>
+          </div>
+
+          {workspace.panes.map((pane, index) => (
+            <React.Fragment key={pane.id}>
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label={ru ? 'Изменить ширину окон' : 'Resize the panes'}
+                aria-valuenow={Math.round(workspace.shares[index] ?? 0)}
+                tabIndex={0}
+                data-testid={`workspace-divider-${pane.id}`}
+                onPointerDown={(event) => beginDividerDrag(index, event)}
+                onKeyDown={(event) => nudgeDivider(index, event)}
+                className="group relative z-10 flex w-1 shrink-0 cursor-col-resize items-center justify-center bg-slate-800/60 transition-colors hover:bg-indigo-500/70 focus-visible:bg-indigo-500/70"
+              >
+                <span className="pointer-events-none h-8 w-0.5 rounded-full bg-slate-600/0 transition-colors group-hover:bg-slate-300/60" />
+              </div>
+              <div
+                className="flex min-h-0 min-w-0 flex-col"
+                style={{ flexGrow: workspace.shares[index + 1] ?? 1, flexBasis: 0 }}
+              >
+                <WorkspacePane
+                  path={pane.path}
+                  taken={shownScreens}
+                  onPick={(path) => chooseScreen(pane.id, path)}
+                  onClear={() => clearScreen(pane.id)}
+                  onClose={() => closePane(pane.id)}
+                >
+                  {pane.path && (
+                    <ErrorBoundary
+                      key={pane.path}
+                      title={t.common.errorBoundaryTitle}
+                      hint={t.common.errorBoundaryHint}
+                      retryLabel={t.common.errorBoundaryRetry}
+                    >
+                      {renderTab(pane.path)}
+                    </ErrorBoundary>
+                  )}
+                </WorkspacePane>
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
 
         <ErrorBoundary
           title={t.common.errorBoundaryTitle}
@@ -496,6 +755,7 @@ function AppContent() {
         />
 
         </ErrorBoundary>
+      </div>
       </div>
       </div>
 

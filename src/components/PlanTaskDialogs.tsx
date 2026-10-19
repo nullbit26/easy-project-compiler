@@ -136,13 +136,13 @@ export const PlanTaskDialogs: React.FC<PlanTaskDialogsProps> = ({
             <div className="flex gap-2 pt-2">
               <button
                 onClick={onCloseAddTask}
-                className="w-1/2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs py-2 rounded-lg cursor-pointer"
+                className="inline-flex h-8 w-1/2 cursor-pointer items-center justify-center rounded-lg bg-slate-800/80 text-xs font-medium text-slate-300 ring-1 ring-inset ring-slate-700/80 transition-colors hover:bg-slate-700/80 hover:text-white"
               >
                 {t.common.cancel}
               </button>
               <button
                 onClick={handleCreateTask}
-                className="w-1/2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 rounded-lg cursor-pointer"
+                className="inline-flex h-8 w-1/2 cursor-pointer items-center justify-center rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-xs font-medium text-white transition-colors hover:bg-indigo-500"
               >
                 {t.plan.createTaskButton}
               </button>
@@ -168,7 +168,7 @@ export const PlanTaskDialogs: React.FC<PlanTaskDialogsProps> = ({
               <button
                 onClick={onCloseAdapt}
                 aria-label={t.common.close}
-                className="text-xs text-slate-400 hover:text-white"
+                className="h-7 w-7 cursor-pointer rounded-md text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
               >
                 ✕
               </button>
@@ -197,14 +197,14 @@ export const PlanTaskDialogs: React.FC<PlanTaskDialogsProps> = ({
             <div className="flex gap-2 pt-2">
               <button
                 onClick={onCloseAdapt}
-                className="w-1/2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs py-2.5 rounded-xl cursor-pointer"
+                className="inline-flex h-9 w-1/2 cursor-pointer items-center justify-center rounded-lg bg-slate-800/80 text-xs font-medium text-slate-300 ring-1 ring-inset ring-slate-700/80 transition-colors hover:bg-slate-700/80 hover:text-white"
               >
                 {t.common.cancel}
               </button>
               <button
                 onClick={handleRunAiAdapt}
                 disabled={isAdapting}
-                className="w-1/2 bg-gradient-to-r from-indigo-600 to-purple-600 enabled:hover:from-indigo-500 enabled:hover:to-purple-500 text-white font-bold text-xs py-2.5 rounded-xl enabled:cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                className="flex h-9 w-1/2 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-xs font-medium text-white transition-colors enabled:hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-50"
               >
                 {isAdapting ? (
                   <>

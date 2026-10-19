@@ -24,7 +24,7 @@ export const BriefView: React.FC<BriefViewProps> = ({ project, onOpenNewProjectM
         {onOpenNewProjectModal && (
           <button
             onClick={onOpenNewProjectModal}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-500/15 px-3 py-2 text-xs font-medium text-indigo-100 ring-1 ring-inset ring-indigo-400/40 transition-colors hover:bg-indigo-500/25 hover:text-white"
           >
             <Sparkles className="w-4 h-4" />
             <span>{t.common.newProject}</span>
@@ -38,7 +38,7 @@ export const BriefView: React.FC<BriefViewProps> = ({ project, onOpenNewProjectM
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-6">
         {/* Left Column: Brief & Scope Control */}
         {/*
           Two panels: what the project is, how it is built.
@@ -55,7 +55,7 @@ export const BriefView: React.FC<BriefViewProps> = ({ project, onOpenNewProjectM
           </div>
 
           {/* Problem & Value */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 @xl:grid-cols-2 gap-3">
             <div className="bg-slate-950/60 p-3 rounded-lg space-y-1">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{t.brief.coreProblem}</span>
               <p className="text-xs text-slate-200">{brief?.coreProblem || '—'}</p>

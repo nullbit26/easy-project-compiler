@@ -100,8 +100,8 @@ describe('Phase 3 - Central State & Routing Tests', () => {
   it('4. Navigation and deep routes do not crash', () => {
     render(<App />);
 
-    // Header: the app's own title bar is on screen and names the app
-    expect(screen.getByTestId('app-title-bar')).toHaveTextContent('Easy Project Compiler');
+    // Header: the app's name heads the full-height sidebar column.
+    expect(screen.getByTestId('app-brand')).toHaveTextContent('Easy Project Compiler');
   });
 
   it('5. Project data remains safe when API calls fail', async () => {

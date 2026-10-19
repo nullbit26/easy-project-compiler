@@ -21,6 +21,7 @@ import type {
   WeightBudget
 } from '../services/api';
 import { budgetLine, buildWeightLine, formatBytes } from '../utils/byteSize';
+import { Button } from './ui/Button';
 
 interface VerificationPanelProps {
   ru: boolean;
@@ -202,8 +203,9 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
   const visibleProblems = onlyNew && newProblems.length > 0 ? newProblems : problems;
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-      <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-2">
+    /* A section of the screen's one surface, not a card on it. */
+    <div className="space-y-3 border-t border-slate-800/70 pt-5">
+      <div className="flex items-start justify-between gap-2">
         <div>
           <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
             {ru ? 'Цикл проверки' : 'Verification loop'}
@@ -288,6 +290,7 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
       <input
         value={customCommand}
         onChange={(e) => setCustomCommand(e.target.value)}
+        aria-label={ru ? 'Своя команда проверки' : 'Custom check command'}
         placeholder={ru ? 'Своя команда (не обязательно): node scripts/check.js' : 'Custom command (optional): node scripts/check.js'}
         className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-[11px] font-mono text-slate-200 focus:border-emerald-600"
       />
@@ -302,14 +305,16 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
           />
           <span>{ru ? 'Проверять сразу после записи' : 'Verify right after writing'}</span>
         </label>
-        <button
+        <Button
+          variant="success"
+          size="sm"
+          icon={isVerifying ? Loader2 : PlayCircle}
+          className="shrink-0"
           onClick={() => onVerify(selected, customCommand.trim() || undefined)}
           disabled={isVerifying || !canRun}
-          className="bg-emerald-700 enabled:hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-xs px-3 py-2 rounded-lg transition-colors enabled:cursor-pointer inline-flex items-center gap-2 shrink-0"
         >
-          {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
-          <span>{isVerifying ? (ru ? 'Проверяю…' : 'Checking…') : ru ? 'Проверить проект' : 'Check the project'}</span>
-        </button>
+          {isVerifying ? (ru ? 'Проверяю…' : 'Checking…') : ru ? 'Проверить проект' : 'Check the project'}
+        </Button>
       </div>
 
       {/*
@@ -353,7 +358,7 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
               onSaveBudget(budgetField);
             }}
             disabled={budgetSaving}
-            className="bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-50 text-slate-100 font-bold text-[10px] px-2.5 py-1.5 rounded-lg border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+            className="h-7 shrink-0 rounded-lg px-2.5 text-[11px] font-medium text-slate-200 ring-1 ring-inset ring-slate-700 transition-colors enabled:hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-50"
           >
             {budgetSaving && <Loader2 className="w-3 h-3 animate-spin" />}
             <span>{ru ? 'Задать бюджет' : 'Set the budget'}</span>
@@ -368,7 +373,7 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
           <button
             onClick={onFix}
             disabled={isFixing}
-            className="w-full bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-60 text-white font-bold text-[11px] px-3 py-2.5 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center justify-center gap-2"
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-xs font-medium text-white transition-colors enabled:hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-50"
           >
             {isFixing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
             <span>
@@ -558,7 +563,7 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
             <button
               onClick={onFix}
               disabled={isFixing}
-              className="w-full bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-60 text-white font-bold text-xs px-4 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center justify-center gap-2"
+              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-xs font-medium text-white transition-colors enabled:hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-50"
             >
               {isFixing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
               <span>
@@ -596,7 +601,7 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
                 <button
                   onClick={onFix}
                   disabled={isFixing}
-                  className="w-full bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-60 text-white font-bold text-xs px-4 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center justify-center gap-2"
+                  className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-xs font-medium text-white transition-colors enabled:hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-50"
                 >
                   {isFixing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
                   <span>

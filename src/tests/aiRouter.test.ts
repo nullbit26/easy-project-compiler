@@ -11,12 +11,21 @@ import {
   testProviderKey
 } from '../../server/ai/aiProvider';
 
-const ENV_VARS = ['GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'NVIDIA_API_KEY'] as const;
+const ENV_VARS = [
+  'GEMINI_API_KEY',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'NVIDIA_API_KEY',
+  'OPENROUTER_API_KEY',
+  'GROQ_API_KEY'
+] as const;
 const originalEnv: Record<string, string | undefined> = {};
 
 const OPENAI_KEY = 'sk-proj-abcdefghijklmnopqrstuvwxyz0123';
 const ANTHROPIC_KEY = 'sk-ant-abcdefghijklmnopqrstuvwxyz';
 const NVIDIA_KEY = 'nvapi-abcdefghijklmnopqrstuvwxyz0123456789';
+const OPENROUTER_KEY = 'sk-or-v1-abcdefghijklmnopqrstuvwxyz0123456789';
+const GROQ_KEY = 'gsk_abcdefghijklmnopqrstuvwxyz0123456789';
 
 function jsonResponse(status: number, body: any) {
   return {
@@ -126,6 +135,35 @@ describe('AI provider router', () => {
     await expect(callAiJson('hi')).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(JSON.parse((fetchMock.mock.calls[1] as any)[1].body).response_format).toBeUndefined();
+  });
+
+  it('5c. Calls OpenRouter through its OpenAI-compatible endpoint', async () => {
+    process.env.OPENROUTER_API_KEY = OPENROUTER_KEY;
+    const fetchMock = vi.fn(async () => jsonResponse(200, { choices: [{ message: { content: '{"ok":true,"stack":"OR"}' } }] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callAiJson('pick a stack')).resolves.toEqual({ ok: true, stack: 'OR' });
+    expect(getLastAiProvider()).toBe('openrouter');
+
+    const [url, init] = fetchMock.mock.calls[0] as any;
+    expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+    expect(init.headers.Authorization).toBe(`Bearer ${OPENROUTER_KEY}`);
+    // OpenRouter names models as `vendor/model`, and the id must keep that slash.
+    expect(JSON.parse(init.body).model).toMatch(/^[a-z-]+\//);
+  });
+
+  it('5d. Calls Groq through its OpenAI-compatible endpoint', async () => {
+    process.env.GROQ_API_KEY = GROQ_KEY;
+    const fetchMock = vi.fn(async () => jsonResponse(200, { choices: [{ message: { content: '{"ok":true,"stack":"Groq"}' } }] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callAiJson('pick a stack')).resolves.toEqual({ ok: true, stack: 'Groq' });
+    expect(getLastAiProvider()).toBe('groq');
+
+    const [url, init] = fetchMock.mock.calls[0] as any;
+    expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
+    expect(init.headers.Authorization).toBe(`Bearer ${GROQ_KEY}`);
+    expect(JSON.parse(init.body).model).toBeTruthy();
   });
 
   it('6. Returns null on an auth failure and reports the reason without leaking the key', async () => {

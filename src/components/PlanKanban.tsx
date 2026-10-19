@@ -6,6 +6,7 @@ import { Layers, Plus, Sparkles, Rows3, Columns3, Bot } from 'lucide-react';
 import { PlanTaskDialogs } from './PlanTaskDialogs';
 import { TaskStatusMenu } from './TaskStatusMenu';
 import { cleanPhaseTitle } from '../utils/planAdapt';
+import { Button, IconButton } from './ui/Button';
 
 interface PlanKanbanProps {
   project: ProjectState | null;
@@ -43,13 +44,9 @@ export const PlanKanban: React.FC<PlanKanbanProps> = ({
           {t.common.noProjectSubtext}
         </p>
         {onOpenNewProjectModal && (
-          <button
-            onClick={onOpenNewProjectModal}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>{t.common.newProject}</span>
-          </button>
+          <Button variant="primary" size="md" icon={Sparkles} onClick={onOpenNewProjectModal}>
+            {t.common.newProject}
+          </Button>
         )}
       </div>
     );
@@ -84,19 +81,12 @@ export const PlanKanban: React.FC<PlanKanbanProps> = ({
       <div className="flex flex-wrap items-center gap-1">
         {onSwitchToCanvas && (
           <div className="mr-1 flex items-center gap-0.5">
-            <button
-              onClick={onSwitchToCanvas}
-              title={t.plan.viewCanvas}
-              aria-label={t.plan.viewCanvas}
-              className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
-            >
-              <Rows3 className="h-4 w-4" />
-            </button>
+            <IconButton label={t.plan.viewCanvas} icon={Rows3} onClick={onSwitchToCanvas} />
             <span
               title={t.plan.viewKanban}
               aria-label={t.plan.viewKanban}
               data-active-view="kanban"
-              className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-100"
+              className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-100 ring-1 ring-inset ring-slate-700"
             >
               <Columns3 className="h-4 w-4" />
             </span>
@@ -121,28 +111,20 @@ export const PlanKanban: React.FC<PlanKanbanProps> = ({
         </select>
 
         {onAdaptProjectPhases && (
-          <button
+          <IconButton
+            label={t.plan.adaptPlanButton}
+            icon={Bot}
+            variant="primary"
+            className="ml-1"
             onClick={() => setShowAdaptModal(true)}
-            title={t.plan.adaptPlanButton}
-            aria-label={t.plan.adaptPlanButton}
-            className="ml-1 grid h-8 w-8 cursor-pointer place-items-center rounded-lg bg-indigo-600 text-white transition-colors hover:bg-indigo-500"
-          >
-            <Bot className="h-4 w-4" />
-          </button>
+          />
         )}
 
-        <button
-          onClick={() => setShowAddTaskModal(true)}
-          title={t.plan.addTaskButton}
-          aria-label={t.plan.addTaskButton}
-          className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+        <IconButton label={t.plan.addTaskButton} icon={Plus} onClick={() => setShowAddTaskModal(true)} />
       </div>
 
       {/* 3 Kanban Columns */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 @2xl:grid-cols-3 gap-6">
         {/* Column 1: Ready / Backlog */}
         <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-3">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
@@ -285,9 +267,9 @@ const TaskCard: React.FC<{
           onClick={() => onCompilePrompt(task.title)}
           title={compileLabel}
           aria-label={compileLabel}
-          className="bg-slate-100 hover:bg-white text-slate-900 font-bold text-[10px] px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+          className="inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-slate-100 px-2 text-[10px] font-medium text-slate-900 shadow-[0_1px_2px_rgb(2_6_23/0.45)] transition-colors hover:bg-white"
         >
-          <Sparkles className="w-3 h-3" />
+          <Sparkles className="h-3 w-3" />
           <span>{compileShortLabel}</span>
         </button>
       </div>

@@ -30,6 +30,8 @@
 
 - NVIDIA NIM — бесплатный ключ: https://build.nvidia.com/settings/api-keys (начинается с nvapi-)
 - Google Gemini — ключ: https://aistudio.google.com/app/apikey (начинается с AIza)
+- OpenRouter — ключ: https://openrouter.ai/keys (начинается с sk-or-)
+- Groq — ключ: https://console.groq.com/keys (начинается с gsk_)
 
 Ответ модели идёт 30–60 секунд, всё это время в правом нижнем углу видно, что приложение работает.
 

@@ -54,7 +54,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
         </p>
         <button
           onClick={this.reset}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer inline-flex items-center gap-2"
+          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] px-3 text-xs font-medium text-white transition-colors hover:bg-indigo-500"
         >
           <RotateCcw className="w-3.5 h-3.5" />
           {this.props.retryLabel}

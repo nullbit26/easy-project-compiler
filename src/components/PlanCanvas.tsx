@@ -5,15 +5,18 @@ import {
   ChevronDown,
   ChevronUp,
   Columns3,
+  FileCode2,
   GripVertical,
   Layers,
   Link2,
   ListStart,
   Maximize2,
   Minus,
+  PanelsTopLeft,
   Plus,
   Rows3,
-  Sparkles
+  Sparkles,
+  X
 } from 'lucide-react';
 
 import { CanvasLaneSkin, LaneColor, ProjectState, ProjectPhase, ProjectTask, TaskStatus } from '../types';
@@ -49,9 +52,16 @@ import {
 } from '../utils/canvasView';
 import { PlanTaskDialogs } from './PlanTaskDialogs';
 import { STATUS_DOT, TaskStatusMenu } from './TaskStatusMenu';
+import { IconButton } from './ui/Button';
 import { PlanContextMenu, type PlanMenuTarget } from './PlanContextMenu';
 import { AutopilotPlate } from './AutopilotPlate';
 import { laneColorOf, laneSkinOf } from '../utils/laneSkin';
+import {
+  TASK_FILE_DRAG_TYPE,
+  mergeTaskFiles,
+  removeTaskFile,
+  taskFilePathsFromDrop
+} from '../utils/taskFiles';
 import {
   dependencyGraph,
   dependencyPlan,
@@ -127,6 +137,8 @@ interface PlanCanvasProps {
   onUpdateTaskPositions: (positions: Record<string, { x: number; y: number }>) => void;
   /** Renaming a card: the plan's own words for the work, changed where the card is. */
   onUpdateTaskTitle?: (taskId: string, title: string) => void;
+  /** A file dropped on a card joins that card's AI context. */
+  onUpdateTaskFiles?: (taskId: string, files: string[]) => void;
   /**
    * The lanes as the user arranged them: name, colour, and where each one was dragged to. The second
    * argument is the cards a moved zone carried with it — a zone and the cards lying on it are one
@@ -146,6 +158,16 @@ interface PlanCanvasProps {
   onOpenNewProjectModal?: () => void;
   /** Present when the plan screen can also be read as columns. */
   onSwitchToKanban?: () => void;
+  /** Present when the split studio is reachable from here. */
+  onOpenStudio?: () => void;
+  /** The studio's terminal already shows the run: start it without floating a plate over the split. */
+  dockedPlate?: boolean;
+  /**
+   * The board is one window of a split, not the screen: it has no 420 px floor to keep, because a
+   * pane can legitimately be shorter than that and a floor would push the board's bottom edge out
+   * of the pane it was given.
+   */
+  fitToPane?: boolean;
 }
 
 export const PlanCanvas: React.FC<PlanCanvasProps> = ({
@@ -153,6 +175,7 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
   onUpdateTaskStatus,
   onUpdateTaskPositions,
   onUpdateTaskTitle,
+  onUpdateTaskFiles,
   onUpdateCanvasLanes,
   onCompileTaskPrompt,
   onAddAutoCode,
@@ -160,7 +183,10 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
   onAddTask,
   onAdaptProjectPhases,
   onOpenNewProjectModal,
-  onSwitchToKanban
+  onSwitchToKanban,
+  onOpenStudio,
+  dockedPlate = false,
+  fitToPane = false
 }) => {
   const { language, t } = useLanguage();
 
@@ -1023,6 +1049,38 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
     setHoveredTaskId((current) => (hovering ? taskId : current === taskId ? null : current));
   }, []);
 
+  /**
+   * A file dropped on a card joins the files its prompt is compiled from.
+   *
+   * The card already carries the plan's guess at what the work touches; what is dropped is the
+   * user's answer to that guess, so the two are merged rather than replaced. An unchanged list is
+   * not written: dropping the same file twice must not mark the project dirty.
+   */
+  const filesDroppedOnTask = useCallback(
+    (taskId: string, paths: string[]) => {
+      if (!onUpdateTaskFiles || !project || paths.length === 0) return;
+      const task = project.phases.flatMap((phase) => phase.tasks).find((candidate) => candidate.id === taskId);
+      if (!task) return;
+
+      const next = mergeTaskFiles(task.relevantFiles, paths);
+      const current = task.relevantFiles || [];
+      if (next.length === current.length && next.every((path, index) => path === current[index])) return;
+      onUpdateTaskFiles(taskId, next);
+    },
+    [onUpdateTaskFiles, project]
+  );
+
+  /** The cross on a file chip: the picked file leaves the card, nothing else does. */
+  const removeFileFromTask = useCallback(
+    (taskId: string, path: string) => {
+      if (!onUpdateTaskFiles || !project) return;
+      const task = project.phases.flatMap((phase) => phase.tasks).find((candidate) => candidate.id === taskId);
+      if (!task) return;
+      onUpdateTaskFiles(taskId, removeTaskFile(task.relevantFiles, path));
+    },
+    [onUpdateTaskFiles, project]
+  );
+
   /** A drag that is interrupted — a project switch, an unmount — must not leave the card stuck. */
   useEffect(() => {
     return () => {
@@ -1139,9 +1197,9 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
         {onOpenNewProjectModal && (
           <button
             onClick={onOpenNewProjectModal}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-500/15 px-3 py-2 text-xs font-medium text-indigo-100 ring-1 ring-inset ring-indigo-400/40 transition-colors hover:bg-indigo-500/25 hover:text-white"
           >
-            <Sparkles className="w-4 h-4" />
+            <Sparkles className="h-3.5 w-3.5" />
             <span>{t.common.newProject}</span>
           </button>
         )}
@@ -1204,14 +1262,7 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
             >
               <Rows3 className="h-4 w-4" />
             </span>
-            <button
-              onClick={onSwitchToKanban}
-              title={t.plan.viewKanban}
-              aria-label={t.plan.viewKanban}
-              className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
-            >
-              <Columns3 className="h-4 w-4" />
-            </button>
+            <IconButton label={t.plan.viewKanban} icon={Columns3} onClick={onSwitchToKanban} />
           </div>
         )}
 
@@ -1233,45 +1284,35 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
           ))}
         </select>
 
-        <button
-          onClick={handleArrange}
-          title={t.plan.arrange}
-          aria-label={t.plan.arrange}
-          className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
-        >
-          <Rows3 className="h-4 w-4" />
-        </button>
+        <IconButton label={t.plan.arrange} icon={Rows3} onClick={handleArrange} />
 
         {onAdaptProjectPhases && (
-          <button
+          <IconButton
+            label={t.plan.adaptPlanButton}
+            icon={Bot}
+            variant="primary"
+            className="ml-1"
             onClick={() => setAdaptOpen(true)}
-            title={t.plan.adaptPlanButton}
-            aria-label={t.plan.adaptPlanButton}
-            className="ml-1 grid h-8 w-8 cursor-pointer place-items-center rounded-lg bg-indigo-600 text-white transition-colors hover:bg-indigo-500"
-          >
-            <Bot className="h-4 w-4" />
-          </button>
+          />
         )}
 
-        <button
-          onClick={() => setAddTaskOpen(true)}
-          title={t.plan.addTaskButton}
-          aria-label={t.plan.addTaskButton}
-          className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+        <IconButton label={t.plan.addTaskButton} icon={Plus} onClick={() => setAddTaskOpen(true)} />
 
         {onPipelineTaskDone && pipelineCandidates.length > 0 && (
-          <button
-            onClick={() => startPipeline(pipelineCandidates)}
-            title={t.plan.autoCodeAllButton}
-            aria-label={t.plan.autoCodeAllButton}
+          <IconButton
+            label={t.plan.autoCodeAllButton}
+            icon={ListStart}
             data-testid="plan-pipeline-button"
-            className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
-          >
-            <ListStart className="h-4 w-4" />
-          </button>
+            onClick={() => startPipeline(pipelineCandidates)}
+          />
+        )}
+
+        {onOpenStudio && (
+          <IconButton
+            label={language === 'ru' ? 'Открыть студию: план + превью + терминал' : 'Open the studio: plan + preview + terminal'}
+            icon={PanelsTopLeft}
+            onClick={onOpenStudio}
+          />
         )}
       </div>
 
@@ -1295,7 +1336,11 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
        * out on a tall window and left a band of empty slate under a board that could have used it.
        * The floor stays, so a short window scrolls instead of shrinking the board to nothing.
        */}
-      <div className="relative flex min-h-[420px] flex-1 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
+      <div
+        className={`relative flex flex-1 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 ${
+          fitToPane ? 'min-h-0' : 'min-h-[420px]'
+        }`}
+      >
         <div
           ref={surfaceRef}
           tabIndex={0}
@@ -1659,6 +1704,8 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
                 onUpdateStatus={onUpdateTaskStatus}
                 onCompilePrompt={onCompileTaskPrompt}
                 onOpenMenu={openTaskMenu}
+                onFilesDropped={onUpdateTaskFiles ? filesDroppedOnTask : undefined}
+                onRemoveFile={onUpdateTaskFiles ? removeFileFromTask : undefined}
               />
             ))}
           </div>
@@ -1701,8 +1748,8 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
               title={t.plan.linksLegendTitle}
               aria-pressed={showLinks}
               data-testid="plan-links-toggle"
-              className={`h-7 px-2 rounded-lg text-[11px] font-bold flex items-center gap-1.5 cursor-pointer ${
-                showLinks ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+              className={`h-7 px-2 rounded-lg text-[11px] font-medium flex items-center gap-1.5 cursor-pointer ${
+                showLinks ? 'bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-white' : 'text-slate-400 hover:bg-slate-800'
               }`}
             >
               <Link2 className="w-3.5 h-3.5" />
@@ -1711,38 +1758,17 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
             </button>
           )}
 
-          <button
-            onClick={() => zoomByStep(-1)}
-            title={t.plan.zoomOut}
-            aria-label={t.plan.zoomOut}
-            className="w-7 h-7 rounded-lg text-slate-300 hover:bg-slate-800 flex items-center justify-center cursor-pointer"
-          >
-            <Minus className="w-4 h-4" />
-          </button>
+          <IconButton label={t.plan.zoomOut} icon={Minus} size="xs" onClick={() => zoomByStep(-1)} />
           <button
             onClick={() => applyView({ x: size.width / 2, y: size.height / 2, scale: 1 })}
             title={t.plan.resetZoom}
             data-testid="canvas-zoom-readout"
-            className="px-2 h-7 rounded-lg text-[11px] font-bold text-slate-300 hover:bg-slate-800 cursor-pointer tabular-nums"
+            className="h-7 cursor-pointer rounded-md px-2 text-[11px] font-medium tabular-nums text-slate-300 transition-colors hover:bg-slate-800"
           >
             {Math.round(view.scale * 100)}%
           </button>
-          <button
-            onClick={() => zoomByStep(1)}
-            title={t.plan.zoomIn}
-            aria-label={t.plan.zoomIn}
-            className="w-7 h-7 rounded-lg text-slate-300 hover:bg-slate-800 flex items-center justify-center cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-          <button
-            onClick={fitAll}
-            title={t.plan.fitView}
-            aria-label={t.plan.fitView}
-            className="w-7 h-7 rounded-lg text-slate-300 hover:bg-slate-800 flex items-center justify-center cursor-pointer"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
+          <IconButton label={t.plan.zoomIn} icon={Plus} size="xs" onClick={() => zoomByStep(1)} />
+          <IconButton label={t.plan.fitView} icon={Maximize2} size="xs" onClick={fitAll} />
         </div>
 
         {/*
@@ -1876,6 +1902,7 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
             relevantFiles: pipeline.tasks[0].targetFiles
           }}
           project={project}
+          docked={dockedPlate}
           pipeline={{
             tasks: pipeline.tasks,
             onTaskDone: (done) => {
@@ -1901,6 +1928,7 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
               .find((task) => task.id === autopilot.taskId)?.relevantFiles
           }}
           project={project}
+          docked={dockedPlate}
           onClose={() => setAutopilot(null)}
         />
       )}
@@ -1948,6 +1976,9 @@ const CanvasCardBase: React.FC<{
   language: 'ru' | 'en';
   compileLabel: string;
   phaseLabel: string;
+  /** Present when a file can be dropped on the card and removed from it again. */
+  onFilesDropped?: (taskId: string, paths: string[]) => void;
+  onRemoveFile?: (taskId: string, path: string) => void;
   /** The colour of the lane this card's status belongs to, when the user changed it. */
   laneColor?: LaneColor;
   /** How many unfinished tasks this one is waiting for. */
@@ -1981,12 +2012,37 @@ const CanvasCardBase: React.FC<{
   onUpdateStatus,
   onCompilePrompt,
   onOpenMenu,
+  onFilesDropped,
+  onRemoveFile,
   autocodingId
 }) => {
   const { t } = useLanguage();
   const passed = task.acceptanceCriteria?.filter((criterion) => criterion.passed).length || 0;
   const total = task.acceptanceCriteria?.length || 0;
   const lane = laneOfStatus(task.status);
+  /** A file is over the card: the border answers before the drop does. */
+  const [fileOver, setFileOver] = useState(false);
+  /**
+   * The card's files, listed on demand.
+   *
+   * The list is a panel that opens over the board rather than a row inside the card: the board
+   * places cards at the height it laid out, and a row that grew every card by its own height made
+   * neighbours overlap by 22 px. The footer carries the count, and the list is one click away.
+   */
+  const [filesOpen, setFilesOpen] = useState(false);
+  const filesAreaRef = useRef<HTMLDivElement | null>(null);
+  const files = task.relevantFiles || [];
+
+  useEffect(() => {
+    if (!filesOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && filesAreaRef.current?.contains(target)) return;
+      setFilesOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [filesOpen]);
   // The stripe down the card's left edge is the lane's colour, so a recoloured lane reads the same
   // on the cards inside it as it does on the zone around them.
   const laneSkin = laneSkinOf(lane, laneColor);
@@ -1998,19 +2054,58 @@ const CanvasCardBase: React.FC<{
       data-dragging={dragging ? 'true' : undefined}
       data-compact={compact ? 'true' : undefined}
       data-autocoding={autocodingId === task.id ? 'true' : undefined}
+      data-file-over={fileOver ? 'true' : undefined}
       // The whole card is the handle: it selects and drags, while a press that lands on a control
       // inside it is left alone. `touch-none` belongs here rather than on the header so a touch
       // drag works from anywhere on the card.
       onPointerDown={(event) => onDragStart(event, task.id)}
+      /*
+       * A file dragged from the tree lands on the card it is meant for. The drop is stopped here so
+       * the board under it does not also react, and only a drag that carries a path is accepted: a
+       * card dragged over another card is not a file.
+       */
+      onDragOver={
+        onFilesDropped
+          ? (event) => {
+              const types = Array.from(event.dataTransfer.types || []);
+              if (!types.includes(TASK_FILE_DRAG_TYPE) && !types.includes('text/plain')) return;
+              event.preventDefault();
+              event.stopPropagation();
+              event.dataTransfer.dropEffect = 'copy';
+              setFileOver(true);
+            }
+          : undefined
+      }
+      onDragLeave={
+        onFilesDropped
+          ? (event) => {
+              if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+              setFileOver(false);
+            }
+          : undefined
+      }
+      onDrop={
+        onFilesDropped
+          ? (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setFileOver(false);
+              const paths = taskFilePathsFromDrop((type) => event.dataTransfer.getData(type));
+              if (paths.length > 0) onFilesDropped(task.id, paths);
+            }
+          : undefined
+      }
       onPointerEnter={() => onHoverChange(task.id, true)}
       onPointerLeave={() => onHoverChange(task.id, false)}
       onContextMenu={(event) => onOpenMenu(event, task)}
       className={`absolute rounded-xl border bg-slate-950 transition-[border-color,box-shadow,transform] ${
         selected
           ? 'border-indigo-500 ring-2 ring-indigo-500/40'
-          : hovered
-            ? 'border-slate-600'
-            : 'border-slate-800'
+          : fileOver
+            ? 'border-indigo-400 ring-2 ring-indigo-400/50'
+            : hovered
+              ? 'border-slate-600'
+              : 'border-slate-800'
       } ${dragging ? 'z-30 shadow-2xl shadow-black/60' : 'z-10 shadow-lg'} ${
         marked ? `border-l-4 ${laneSkin.accent}` : ''
       } ${autocodingId === task.id ? 'animate-pulse ring-2 ring-indigo-400/60' : ''}`}
@@ -2083,6 +2178,68 @@ const CanvasCardBase: React.FC<{
           />
 
           {/*
+           * The files the card is told to work on: a count, in the row that already carries the
+           * card's controls, so a card stays the height the board placed it at. The list itself —
+           * every path, each with a cross — opens above the card, where it covers the board rather
+           * than pushing a neighbour out of the way.
+           */}
+          {files.length > 0 && (
+            <div ref={filesAreaRef} className="relative shrink-0">
+              <button
+                type="button"
+                data-testid={`plan-card-files-${task.id}`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setFilesOpen((open) => !open);
+                }}
+                title={files.join('\n')}
+                aria-label={`${t.plan.cardFiles}: ${files.length}`}
+                aria-expanded={filesOpen}
+                className="flex h-6 cursor-pointer items-center gap-1 rounded-md border border-slate-800 bg-slate-900/80 px-1.5 font-mono text-[10px] text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+              >
+                <FileCode2 className="h-3 w-3 text-indigo-400" />
+                {files.length}
+              </button>
+
+              {filesOpen && (
+                <div
+                  data-testid={`plan-card-file-list-${task.id}`}
+                  className="absolute bottom-full left-0 z-40 mb-1 max-h-48 w-[240px] overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-1 shadow-2xl shadow-black/70"
+                >
+                  {files.map((path, index) => (
+                    <div
+                      key={path}
+                      className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-slate-900"
+                    >
+                      <FileCode2 className="h-2.5 w-2.5 shrink-0 text-indigo-400" />
+                      <span className="min-w-0 flex-1 truncate font-mono text-[9px] text-slate-300" title={path}>
+                        {path}
+                      </span>
+                      {onRemoveFile && (
+                        <button
+                          type="button"
+                          data-testid={`plan-card-file-remove-${task.id}-${index}`}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onRemoveFile(task.id, path);
+                          }}
+                          title={t.plan.removeFile}
+                          aria-label={`${t.plan.removeFile}: ${path}`}
+                          className="shrink-0 cursor-pointer rounded p-0.5 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/*
            * The one control the board exists for, and it is the one that used to vanish: at the
            * fit-the-plan zoom the label is four pixels tall, so the button read as gone. Below the
            * point where a label could still be read it keeps its colour and turns into a square
@@ -2095,10 +2252,11 @@ const CanvasCardBase: React.FC<{
             onClick={() => onCompilePrompt(task.title)}
             title={compileLabel}
             aria-label={compileLabel}
-            /* A light button on a dark board: it is the one action the board exists for, and it
-               reads as pressable without competing with the lane colours behind it. */
-            className={`bg-slate-100 font-bold text-slate-900 shadow-sm shadow-black/40 transition-colors flex items-center justify-center gap-1 cursor-pointer shrink-0 hover:bg-white ${
-              compact ? 'w-9 h-9 rounded-lg' : 'text-[10px] px-2 py-1 rounded-md'
+            /* A light key on a dark card: the one action the card exists for, drawn as the same
+               small chip in both views — the medium weight and the 6 px corner are what keep it
+               from reading as a sticker. */
+            className={`flex shrink-0 cursor-pointer items-center justify-center gap-1 rounded-md bg-slate-100 font-medium text-slate-900 shadow-[0_1px_2px_rgb(2_6_23/0.45)] transition-colors hover:bg-white ${
+              compact ? 'h-8 w-8' : 'h-6 px-2 text-[10px]'
             }`}
           >
             <Sparkles className={compact ? 'w-4 h-4' : 'w-3 h-3'} />

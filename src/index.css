@@ -295,6 +295,47 @@ textarea:focus-visible {
 }
 
 /*
+  The toast's two frames.
+
+  These are keyframes rather than a transition on a class added after mount: an element that is
+  inserted and given its final class in the same frame never paints the starting value, so the
+  transition has nothing to animate and the toast simply appeared. An animation begins with the
+  element, so the first painted frame is already the faint one.
+
+  The exit is an animation with `forwards` instead of a delay before unmounting: the component
+  keeps the text mounted for the duration, and the last frame stays at opacity 0 until it goes.
+*/
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.toast-enter {
+  animation: toast-in 200ms ease-out both;
+}
+
+.toast-leave {
+  animation: toast-out 220ms ease-in forwards;
+}
+
+/*
   A preference for less movement is a request, not a preference to be admired: the pieces appear in
   place, without the drift and the blur, and the overlay goes away sooner (that part is in the
   component, which reads the same media query). The mark in the title bar keeps its picture and
@@ -314,5 +355,10 @@ textarea:focus-visible {
   .title-mark-img,
   .title-mark-sheen {
     animation: none;
+  }
+
+  .toast-enter,
+  .toast-leave {
+    animation-duration: 1ms;
   }
 }

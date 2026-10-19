@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-export type ProviderId = 'gemini' | 'openai' | 'anthropic' | 'nvidia';
+export type ProviderId = 'gemini' | 'openai' | 'anthropic' | 'nvidia' | 'openrouter' | 'groq';
 
 export interface ProviderDefinition {
   id: ProviderId;
@@ -48,6 +48,24 @@ export const PROVIDERS: ProviderDefinition[] = [
     labelEn: 'NVIDIA NIM',
     keyPrefix: 'nvapi-',
     keyUrl: 'https://build.nvidia.com/settings/api-keys',
+    minLength: 20
+  },
+  {
+    id: 'openrouter',
+    envVar: 'OPENROUTER_API_KEY',
+    labelRu: 'OpenRouter',
+    labelEn: 'OpenRouter',
+    keyPrefix: 'sk-or-',
+    keyUrl: 'https://openrouter.ai/keys',
+    minLength: 20
+  },
+  {
+    id: 'groq',
+    envVar: 'GROQ_API_KEY',
+    labelRu: 'Groq',
+    labelEn: 'Groq',
+    keyPrefix: 'gsk_',
+    keyUrl: 'https://console.groq.com/keys',
     minLength: 20
   }
 ];

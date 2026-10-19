@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import React from 'react';
 import { TitleBar } from '../components/TitleBar';
 import { Sidebar } from '../components/Sidebar';
+import App from '../App';
 import { ProjectState } from '../types';
 
 /**
@@ -38,18 +39,34 @@ afterEach(() => {
   delete (window as any).desktopWindow;
 });
 
+const renderSidebar = (onDeleteProject: (id: string) => void = () => {}) =>
+  render(
+    <Sidebar
+      allProjects={[project]}
+      currentProject={project}
+      onSelectProject={() => {}}
+      onDeleteProject={onDeleteProject}
+      activeTab="dashboard"
+      setActiveTab={() => {}}
+      onOpenNewProjectModal={() => {}}
+      onOpenApiSettings={() => {}}
+    />
+  );
+
 describe('Title bar', () => {
-  it('shows the app name in a browser build, where there is no window to control', () => {
+  it('leaves the window controls out of a browser build, where there is no window to control', () => {
     render(<TitleBar />);
 
-    expect(screen.getByTestId('app-title-bar')).toHaveTextContent('Easy Project Compiler');
+    expect(screen.getByTestId('app-title-bar')).toBeInTheDocument();
     expect(screen.queryByLabelText('Свернуть')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Закрыть')).not.toBeInTheDocument();
   });
 
   it('carries the app mark beside the name, cut out and not a badge', () => {
-    render(<TitleBar />);
+    renderSidebar();
 
+    const header = screen.getByTestId('app-brand');
+    expect(header).toHaveTextContent('Easy Project Compiler');
     const wrapper = screen.getByTestId('app-mark');
     const mark = wrapper.querySelector('img') as HTMLImageElement;
     expect(mark).toBeTruthy();
@@ -95,6 +112,26 @@ describe('Title bar', () => {
     expect(bridge.close).toHaveBeenCalledTimes(1);
   });
 
+  it('gives the add-a-column plus the title bar, away from the scrolling screen', () => {
+    const open = vi.fn();
+    const { rerender } = render(<TitleBar onOpenScreenBeside={open} />);
+
+    // Inside the window's own bar: the screen's scrollbar is no place for a control, and a plus
+    // floating over a full-bleed panel covered the very thing it was adding a column beside.
+    const plus = within(screen.getByTestId('app-title-bar')).getByRole('button', {
+      name: 'Открыть экран рядом'
+    });
+    fireEvent.click(plus);
+    expect(open).toHaveBeenCalledTimes(1);
+
+    rerender(<TitleBar onOpenScreenBeside={open} openScreenBesideDisabled />);
+    expect(
+      within(screen.getByTestId('app-title-bar')).getByRole('button', {
+        name: 'Открыть экран рядом'
+      })
+    ).toBeDisabled();
+  });
+
   it('offers to restore the window once it is maximised', async () => {
     const bridge = {
       minimize: vi.fn(),
@@ -113,20 +150,6 @@ describe('Title bar', () => {
 });
 
 describe('Deleting a project', () => {
-  const renderSidebar = (onDeleteProject: (id: string) => void) =>
-    render(
-      <Sidebar
-        allProjects={[project]}
-        currentProject={project}
-        onSelectProject={() => {}}
-        onDeleteProject={onDeleteProject}
-        activeTab="dashboard"
-        setActiveTab={() => {}}
-        onOpenNewProjectModal={() => {}}
-        onOpenApiSettings={() => {}}
-      />
-    );
-
   it('asks before removing anything', () => {
     const onDeleteProject = vi.fn();
     renderSidebar(onDeleteProject);
@@ -160,5 +183,34 @@ describe('Deleting a project', () => {
     expect(onDeleteProject).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('Тестовый проект')).toBeInTheDocument();
+  });
+});
+
+describe('The window shell', () => {
+  /*
+   * The sidebar is the window's one full-height column. It used to start under the title bar, so a
+   * horizontal rule crossed above it and the project switcher read as a block floating between that
+   * rule and the groups below — while the vertical divider stopped at the header and left a T-shaped
+   * corner with no meaning. These are the three measurements that keep that from coming back.
+   */
+  it('runs the sidebar from the top of the window and starts the title bar at its edge', () => {
+    render(<App />);
+
+    const sidebar = document.querySelector('[data-sidebar]') as HTMLElement;
+    const titleBar = screen.getByTestId('app-title-bar');
+
+    expect(sidebar).toBeTruthy();
+    expect(sidebar.className).toContain('border-r');
+    expect(sidebar.className).toContain('h-full');
+
+    // The name heads the column itself…
+    expect(within(sidebar).getByTestId('app-brand')).toHaveTextContent('Easy Project Compiler');
+
+    // …the title bar is beside the column, not a strip running above it…
+    expect(sidebar.compareDocumentPosition(titleBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(titleBar.contains(sidebar)).toBe(false);
+
+    // …and no horizontal rule cuts the column into separate blocks.
+    expect(sidebar.querySelectorAll('[class*="border-t"]')).toHaveLength(0);
   });
 });

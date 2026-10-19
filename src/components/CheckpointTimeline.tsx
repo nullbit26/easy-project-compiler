@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import {
-  AlertTriangle,
+import { IconButton } from './ui/Button';
+import { AlertTriangle,
   CheckCircle2,
   Flag,
   HardDrive,
@@ -59,8 +59,9 @@ export const CheckpointTimeline: React.FC<CheckpointTimelineProps> = ({
     checkpoints.find((checkpoint) => checkpoint.changesetId === changesetId) || null;
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-      <div className="border-b border-slate-800 pb-2">
+    /* A section of the screen's one surface, not a card on it. */
+    <div className="space-y-3 border-t border-slate-800/70 pt-5">
+      <div>
         <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
           {ru ? 'История изменений' : 'Change history'}
         </span>
@@ -76,10 +77,11 @@ export const CheckpointTimeline: React.FC<CheckpointTimelineProps> = ({
           : 'A checkpoint means “everything worked here”. Rolling back returns the folder to exactly that state by undoing every write after it.'}
       </p>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
+          aria-label={ru ? 'Название чекпоинта' : 'Checkpoint name'}
           placeholder={ru ? 'Название: например «Меню работает»' : 'Name: e.g. "Menu works"'}
           className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:border-indigo-600"
         />
@@ -89,7 +91,7 @@ export const CheckpointTimeline: React.FC<CheckpointTimelineProps> = ({
             setName('');
           }}
           disabled={busy}
-          className="bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs px-3 py-2 rounded-lg transition-colors enabled:cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500/15 px-2.5 text-[11px] font-medium text-indigo-100 ring-1 ring-inset ring-indigo-400/40 transition-colors enabled:hover:bg-indigo-500/25 enabled:hover:text-white disabled:pointer-events-none disabled:opacity-50"
         >
           {busyId === 'create' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Flag className="w-3.5 h-3.5" />}
           <span>{ru ? 'Создать чекпоинт' : 'Create checkpoint'}</span>
@@ -109,14 +111,14 @@ export const CheckpointTimeline: React.FC<CheckpointTimelineProps> = ({
               <div className="flex items-center gap-2">
                 <Flag className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                 <span className="text-[11px] font-bold text-white truncate flex-1">{checkpoint.name}</span>
-                <button
-                  onClick={() => onDelete(checkpoint.id)}
+                <IconButton
+                  label={ru ? 'Удалить чекпоинт (история останется)' : 'Delete the checkpoint (history stays)'}
+                  icon={Trash2}
+                  size="xs"
+                  className="shrink-0"
                   disabled={busy}
-                  className="text-slate-400 enabled:hover:text-rose-300 enabled:cursor-pointer disabled:opacity-40 shrink-0"
-                  title={ru ? 'Удалить чекпоинт (история останется)' : 'Delete the checkpoint (history stays)'}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
+                  onClick={() => onDelete(checkpoint.id)}
+                />
               </div>
               <div className="text-[10px] text-slate-400 pl-5">{formatTime(checkpoint.createdAt)}</div>
 
@@ -137,14 +139,14 @@ export const CheckpointTimeline: React.FC<CheckpointTimelineProps> = ({
                         setConfirmRollback(null);
                       }}
                       disabled={busy}
-                      className="text-[10px] font-bold bg-rose-700 enabled:hover:bg-rose-600 disabled:opacity-50 text-white px-2 py-1 rounded enabled:cursor-pointer inline-flex items-center gap-1"
+                      className="inline-flex h-6 items-center gap-1 rounded-md bg-rose-600 px-2 text-[10px] font-medium text-white transition-colors enabled:hover:bg-rose-500 disabled:pointer-events-none disabled:opacity-50"
                     >
                       {busyId === checkpoint.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
                       <span>{ru ? 'Да, откатить' : 'Yes, roll back'}</span>
                     </button>
                     <button
                       onClick={() => setConfirmRollback(null)}
-                      className="text-[10px] text-slate-400 hover:text-white cursor-pointer"
+                      className="h-6 cursor-pointer rounded-md px-2 text-[10px] font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
                     >
                       {ru ? 'Отмена' : 'Cancel'}
                     </button>
@@ -154,7 +156,7 @@ export const CheckpointTimeline: React.FC<CheckpointTimelineProps> = ({
                 <button
                   onClick={() => setConfirmRollback(checkpoint.id)}
                   disabled={busy}
-                  className="ml-5 text-[10px] font-bold bg-slate-800 enabled:hover:bg-rose-900/60 disabled:opacity-40 text-slate-200 px-2 py-1 rounded border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center gap-1"
+                  className="ml-5 inline-flex h-6 items-center gap-1 rounded-md bg-slate-800 px-2 text-[10px] font-medium text-slate-200 ring-1 ring-inset ring-slate-700 transition-colors enabled:hover:bg-rose-950/60 enabled:hover:text-rose-200 disabled:pointer-events-none disabled:opacity-40"
                 >
                   <RotateCcw className="w-3 h-3" />
                   <span>{ru ? 'Откатить сюда' : 'Roll back here'}</span>

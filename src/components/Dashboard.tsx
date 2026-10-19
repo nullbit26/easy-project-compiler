@@ -51,7 +51,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="pt-2">
             <button
               onClick={onOpenNewProjectModal}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm px-6 py-3.5 rounded-2xl transition-all shadow-xl shadow-indigo-600/30 inline-flex items-center gap-2.5 cursor-pointer transform hover:-translate-y-0.5"
+              className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-500/15 px-4 py-2.5 text-sm font-medium text-indigo-100 ring-1 ring-inset ring-indigo-400/40 transition-colors hover:bg-indigo-500/25 hover:text-white"
             >
               <Sparkles className="w-5 h-5 text-indigo-200" />
               <span>{t.common.newProject}</span>
@@ -71,7 +71,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 @xl:grid-cols-2 @3xl:grid-cols-3 gap-4">
             {/* Template 1 */}
             <div
               onClick={onOpenNewProjectModal}
@@ -186,7 +186,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <span>{t.dashboard.featuresTitle}</span>
           </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs text-slate-300">
+          <div className="grid grid-cols-1 @2xl:grid-cols-4 gap-4 text-xs text-slate-300">
             <div className="bg-slate-950/60 p-4 rounded-xl space-y-2">
               <div className="text-indigo-400 font-bold flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4" /> 1. {t.dashboard.feature1Title}
@@ -281,7 +281,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         panel, the type and the agent as plain small caps, and the numbers in their own quiet box.
       */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-slate-100">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex flex-col @2xl:flex-row @2xl:items-center justify-between gap-6">
           <div className="space-y-2 max-w-2xl">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] uppercase tracking-wider">
               {/* One framework name: the type and the engine were printed one after another, and with
@@ -307,7 +307,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           {/* Progress: a number, a bar and the count — no frame of its own. */}
-          <div className="bg-slate-950/60 rounded-xl p-4 min-w-[200px] flex flex-col items-center justify-center text-center">
+          <div className="@2xl:border-l @2xl:border-slate-800 @2xl:pl-6 min-w-[200px] flex flex-col items-center justify-center text-center">
             <div className="text-3xl font-extrabold text-indigo-400">{overallProgress}%</div>
             <p className="text-xs text-slate-400 mt-1 font-medium">{t.dashboard.mvpCompletion}</p>
             <div className="w-full bg-slate-800 rounded-full h-2 mt-3 overflow-hidden">
@@ -324,11 +324,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* "Next Best Action": one tinted row, not a card inside the card. */}
         <div className="mt-6 pt-5 border-t border-slate-800/80">
-          <div className="bg-indigo-500/10 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col @xl:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
-              <div className="p-2.5 bg-indigo-500/15 text-indigo-300 rounded-lg shrink-0">
-                <Sparkles className="w-5 h-5 text-indigo-300" />
-              </div>
+              <Sparkles className="w-4 h-4 mt-1 shrink-0 text-indigo-300" />
               <div>
                 <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">{t.dashboard.nextAction}</div>
                 <div data-testid="dashboard-recommendation" className="text-sm font-bold text-white mt-0.5">
@@ -348,10 +346,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <button
               data-testid="dashboard-recommendation-action"
               onClick={runRecommendation}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer shrink-0"
+              className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-indigo-500/15 px-3 py-2 text-xs font-medium text-indigo-100 ring-1 ring-inset ring-indigo-400/40 transition-colors hover:bg-indigo-500/25 hover:text-white"
             >
               <span>{recommendationLabel}</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
@@ -364,7 +362,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         задачи: 0") that only repeated the label above it. The number is the point of a metric card;
         the label says what it counts; the colour of the icon says whether it is good or bad.
       */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 @xl:grid-cols-2 @3xl:grid-cols-4 gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
           <div className="flex items-center justify-between text-slate-400 text-xs">
             <span className="truncate">{t.dashboard.metricsCompleted}</span>
@@ -407,11 +405,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </h3>
           <button
             onClick={() => setActiveTab('project_plan')}
-            className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer"
+            className="cursor-pointer rounded-md px-1.5 py-1 text-[11px] font-medium text-indigo-300 transition-colors hover:bg-indigo-500/10 hover:text-indigo-200"
           >
             {t.dashboard.viewKanban} ➔
           </button>
-        </div>            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        </div>            <div className="divide-y divide-slate-800 @2xl:divide-y-0 @2xl:grid @2xl:grid-cols-3 @2xl:gap-5">
           {project.phases.map((phase) => {
             const phaseTasks = phase.tasks;
             const phaseCompleted = phaseTasks.filter((t) => t.status === 'completed').length;
@@ -420,7 +418,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             return (
               <div
                 key={phase.id}
-                className="bg-slate-950/60 rounded-xl p-4 space-y-3 flex flex-col justify-between"
+                className="py-3 first:pt-0 last:pb-0 @2xl:py-0 @2xl:border-l @2xl:border-slate-800 @2xl:pl-5 @2xl:first:border-l-0 @2xl:first:pl-0 space-y-3 flex flex-col justify-between"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">

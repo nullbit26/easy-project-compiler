@@ -37,6 +37,8 @@ import { starterFileContent, suggestedStarterPath } from '../utils/starterFile';
 import { autonomyOf } from '../utils/workingMode';
 import { journeyName, journeySentence } from '../utils/journeySteps';
 import { useCopyFlash } from '../utils/copyText';
+import { buttonClass } from './ui/Button';
+import { HelpHint } from './ui/HelpHint';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -50,7 +52,6 @@ import {
   Loader2,
   RefreshCw,
   Save,
-  ShieldAlert,
   Sparkles,
   Undo2,
   Wrench
@@ -570,7 +571,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
         {onOpenNewProjectModal && (
           <button
             onClick={onOpenNewProjectModal}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
+            className={buttonClass({ variant: 'primary', size: 'md' })}
           >
             <Sparkles className="w-4 h-4" />
             <span>{s.createProject}</span>
@@ -613,7 +614,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
       <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={() => setStep(1)}
-          className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-bold text-xs px-3.5 py-2.5 rounded-xl transition-colors cursor-pointer inline-flex items-center gap-2"
+          className={buttonClass({ variant: 'secondary', size: 'sm' })}
         >
           <FolderOpen className="w-4 h-4" />
           <span>{s.noFilesConnect}</span>
@@ -634,7 +635,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             <button
               onClick={handleCreateStarterFile}
               disabled={isCreatingFile}
-              className="bg-amber-700 enabled:hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs px-3.5 py-2.5 rounded-xl transition-colors enabled:cursor-pointer inline-flex items-center gap-2"
+              className={buttonClass({ variant: 'warning', size: 'sm' })}
             >
               {isCreatingFile ? <Loader2 className="w-4 h-4 animate-spin" /> : <FilePlus className="w-4 h-4" />}
               <span>{isCreatingFile ? s.noFilesCreating : s.noFilesCreate}</span>
@@ -677,9 +678,9 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                 key={value}
                 onClick={() => canOpen && setStep(value)}
                 disabled={!canOpen}
-                className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all inline-flex items-center gap-1.5 ${
+                className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-all inline-flex items-center gap-1.5 ${
                   isActive
-                    ? 'bg-indigo-600 border-indigo-500 text-white'
+                    ? 'bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] border-indigo-500 text-white'
                     : canOpen
                     ? 'bg-slate-800 border-slate-700 text-slate-200 enabled:cursor-pointer enabled:hover:bg-slate-700'
                     : 'bg-slate-950 border-slate-800 text-slate-400'
@@ -744,16 +745,20 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
               is the one screen that knows which folder a new project is going to work in, and the
               only one that asks.
             */
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-              <div className="flex flex-wrap items-baseline gap-x-2">
-                <div className="flex items-center gap-2 text-emerald-300 text-sm font-bold">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{s.folderConnected}</span>
-                </div>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-x-2">
+                <span className="text-sm font-medium text-slate-200">{s.folderConnected}</span>
                 <span className="text-xs text-slate-400">
                   {s.filesCountLabel}{' '}
-                  <span className="font-bold text-slate-300">{projectFiles.length}</span>
+                  <span className="tabular-nums text-slate-300">{projectFiles.length}</span>
                 </span>
+                <HelpHint
+                  text={
+                    language === 'ru'
+                      ? 'Приложение никогда не читает .env и ключи, а перед записью сохраняет копию — изменения можно отменить.'
+                      : 'The app never reads .env files or keys, and keeps a copy before writing — any change can be undone.'
+                  }
+                />
               </div>
               {/* The whole path is in the tooltip: a long one must not stretch the card. */}
               <p className="text-xs font-mono text-slate-400 truncate" title={root}>
@@ -770,7 +775,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                   <button
                     onClick={() => handleBind(project.workspaceRoot)}
                     disabled={isBinding}
-                    className="text-emerald-300 enabled:hover:text-emerald-200 disabled:opacity-50 font-bold enabled:cursor-pointer"
+                    className="text-indigo-300 enabled:hover:text-indigo-200 disabled:opacity-50 font-medium enabled:cursor-pointer"
                   >
                     {s.connectSavedFolder}
                   </button>
@@ -785,9 +790,8 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                 <span>{s.noFolderHint}</span>
               </p>
               {onOpenNewProjectModal && (
-                <button
-                  onClick={onOpenNewProjectModal}
-                  className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 hover:text-white font-semibold text-xs px-3 py-2.5 rounded-xl transition-colors cursor-pointer inline-flex items-center justify-center gap-2"
+                <button                  onClick={onOpenNewProjectModal}
+                className={buttonClass({ variant: 'secondary', size: 'sm', className: 'w-full' })}
                 >
                   <FolderOpen className="w-4 h-4" />
                   <span>{s.createProjectWithFolder}</span>
@@ -796,22 +800,13 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             </div>
           )}
 
-          <div className="flex items-start gap-2 text-[11px] text-slate-400">
-            <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
-            <span>
-              {language === 'ru'
-                ? 'Приложение никогда не читает .env и ключи, а перед записью сохраняет копию — изменения можно отменить.'
-                : 'The app never reads .env files or keys, and keeps a copy before writing — any change can be undone.'}
-            </span>
-          </div>
-
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             {root && (
               <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={handleRescan}
-                  disabled={isRescanning}
-                  className="text-[11px] font-bold bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-50 text-slate-200 px-3 py-2 rounded-lg border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center gap-1.5"
+                onClick={handleRescan}
+                disabled={isRescanning}
+                className={buttonClass({ variant: 'secondary', size: 'sm' })}
                 >
                   {isRescanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                   <span>{s.refreshFiles}</span>
@@ -821,7 +816,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             <button
               onClick={() => goToStep(2)}
               disabled={!root}
-              className="ml-auto bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
+              className={buttonClass({ variant: 'primary', size: 'md', className: 'ml-auto' })}
             >
               <span>{s.next}</span>
               <ArrowRight className="w-4 h-4" />
@@ -849,7 +844,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
               )}
 
           {tasks.length > 0 && (
-            <div className="space-y-2">
+            <div className="divide-y divide-slate-800/80 -mx-2">
               {tasks.slice(0, 8).map((task) => {
                 const isSelected = selectedTaskId === task.id && !customTask.trim();
                 return (
@@ -859,10 +854,8 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                       setSelectedTaskId(task.id);
                       setCustomTask('');
                     }}
-                    className={`w-full text-left rounded-xl border p-3 transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-indigo-950/60 border-indigo-500'
-                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                    className={`w-full text-left px-2 py-2.5 transition-colors cursor-pointer ${
+                      isSelected ? 'bg-indigo-500/10' : 'hover:bg-slate-800/40'
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -907,7 +900,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
           <div className="flex items-center justify-between gap-2 pt-1">
             <button
               onClick={() => setStep(1)}
-              className="text-xs font-bold text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+              className={buttonClass({ variant: 'ghost', size: 'sm' })}
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>{s.back}</span>
@@ -916,7 +909,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
               onClick={handleCompile}
               disabled={!taskTitle.trim() || isCompiling || noFilesYet}
               title={noFilesYet ? s.noFilesTitle : undefined}
-              className="bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
+              className={buttonClass({ variant: 'primary', size: 'md' })}
             >
               {isCompiling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
               <span>{isCompiling ? (language === 'ru' ? 'Собираем промпт…' : 'Building the prompt…') : s.compileButton}</span>
@@ -949,7 +942,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             <button
               onClick={handleCopyPrompt}
               disabled={!compiled || noFilesYet}
-              className="bg-emerald-700 enabled:hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
+              className={buttonClass({ variant: 'success', size: 'md' })}
             >
               {promptCopy.state === 'copied' ? (
                 <Check className="w-4 h-4" />
@@ -964,7 +957,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             </button>
             <button
               onClick={() => setStep(2)}
-              className="text-xs font-bold text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+              className={buttonClass({ variant: 'ghost', size: 'sm' })}
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>{s.back}</span>
@@ -972,7 +965,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             <button
               onClick={() => goToStep(4)}
               disabled={noFilesYet}
-              className="ml-auto bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
+              className={buttonClass({ variant: 'primary', size: 'md', className: 'ml-auto' })}
             >
               <span>{s.readyButton}</span>
               <ArrowRight className="w-4 h-4" />
@@ -990,10 +983,17 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
               <p className="text-xs text-slate-400 mt-1">{s.answerHelp}</p>
             </div>
 
+            {/*
+              The answer field holds an answer, so an empty one is a short field, not a page: four
+              rows say "this is where the answer goes", and the field grows once there is something
+              in it. (Reading the clipboard is deliberately impossible in the desktop shell, so
+              there is no paste button here — a control that can only fail is worse than none.)
+            */}
             <textarea
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
-              rows={8}
+              rows={answer.trim() ? 12 : 4}
+              aria-label={s.answerTitle}
               placeholder={s.answerPlaceholder}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-3 text-xs font-mono text-slate-100 focus:border-emerald-600 placeholder:text-slate-400"
             />
@@ -1013,7 +1013,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button
                 onClick={() => setStep(3)}
-                className="text-xs font-bold text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                className={buttonClass({ variant: 'ghost', size: 'sm' })}
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>{s.back}</span>
@@ -1029,7 +1029,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                     onClick={handleWriteFiles}
                     disabled={isWriting}
                     data-write-files
-                    className="bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-50 text-slate-100 border border-slate-700 font-bold text-sm px-4 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
+                    className={buttonClass({ variant: 'secondary', size: 'md' })}
                   >
                     {isWriting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     <span>{s.writeFiles}</span>
@@ -1038,7 +1038,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                 <button
                   onClick={handleReview}
                   disabled={!answer.trim() || isReviewing}
-                  className="bg-emerald-700 enabled:hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
+                  className={buttonClass({ variant: 'success', size: 'md' })}
                 >
                   {isReviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                   <span>{isReviewing ? s.checking : s.checkButton}</span>
@@ -1122,7 +1122,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                     </span>
                     <button
                       onClick={handleCopyContinuation}
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3.5 py-2 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                      className={buttonClass({ variant: 'primary', size: 'sm' })}
                     >
                       {continuationCopy.state === 'copied' ? (
                         <Check className="w-3.5 h-3.5" />
@@ -1161,7 +1161,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                     disabled={markDoneBlockers.length > 0}
                     data-mark-done
                     title={markDoneBlockers.length > 0 ? s.markDoneBlocked : undefined}
-                    className="bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-40 text-slate-100 border border-slate-700 font-bold text-sm px-4 py-3 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
+                    className={buttonClass({ variant: 'secondary', size: 'md' })}
                   >
                     <CheckCircle2 className={`w-4 h-4 ${markDoneBlockers.length > 0 ? 'text-slate-400' : 'text-emerald-400'}`} />
                     <span>{s.markDone}</span>
@@ -1176,7 +1176,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                     continuationCopy.reset();
                     setStep(2);
                   }}
-                  className="text-xs font-bold text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                  className={buttonClass({ variant: 'ghost', size: 'sm' })}
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>{s.restartPrompt}</span>
@@ -1211,7 +1211,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                     <button
                       onClick={handleUndoWrite}
                       disabled={isUndoing}
-                      className="text-[11px] font-bold bg-slate-800 enabled:hover:bg-rose-900/60 disabled:opacity-50 text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center gap-1.5"
+                      className={buttonClass({ variant: 'secondary', size: 'xs' })}
                     >
                       {isUndoing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Undo2 className="w-3.5 h-3.5" />}
                       <span>{s.undoWrite}</span>
@@ -1246,7 +1246,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             <button
               onClick={handleDiagnose}
               disabled={!errorText.trim() || isDiagnosing}
-              className="bg-amber-700 enabled:hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all enabled:cursor-pointer inline-flex items-center gap-2"
+              className={buttonClass({ variant: 'warning', size: 'sm' })}
             >
               {isDiagnosing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wrench className="w-4 h-4" />}
               <span>{isDiagnosing ? s.explaining : s.explainError}</span>
@@ -1270,7 +1270,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                 )}
                 <button
                   onClick={handleCopyFix}
-                  className="text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-100 px-3 py-2 rounded-lg border border-slate-700 transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                  className={buttonClass({ variant: 'secondary', size: 'xs' })}
                 >
                   {fixCopy.state === 'copied' ? (
                     <Check className="w-3.5 h-3.5 text-emerald-400" />

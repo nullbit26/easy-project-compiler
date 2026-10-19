@@ -30,6 +30,7 @@ import { isSameFolder } from '../utils/folderPath';
 import { useLanguage } from '../context/LanguageContext';
 import { Sparkles, Upload, Gamepad2, Code2, Cpu, ArrowRight, Loader2, FileCode, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp, HelpCircle, HelpCircle as QuestionIcon, ArrowLeft, RefreshCw, ShieldCheck, Layers, Gauge, Settings, FolderOpen, Users } from 'lucide-react';
 import { ApiSettingsPanel } from './ApiSettingsPanel';
+import { buttonClass } from './ui/Button';
 
 interface ProjectSetupProps {
   onAddProject: (project: ProjectState) => void;
@@ -908,8 +909,15 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
     </div>
   );
 
+  /*
+   * The three settings blocks of the wizard are sections of one dialog, not cards on a page.
+   *
+   * Each was a rounded plate with its own fill inside the dialog's own plate, so the first screen
+   * a new project sees was three frames deep before the first field. A hairline and a little air do
+   * the same separating work without adding a surface to look through.
+   */
   const modeBlock = (
-    <div data-testid="mode-block" className="space-y-2 bg-slate-950/60 rounded-xl p-3.5">
+    <div data-testid="mode-block" className="space-y-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <Users className="w-4 h-4 text-indigo-400" />
         <span className="text-xs font-bold text-slate-200">{t.mode.interfaceLabel}</span>
@@ -928,15 +936,13 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                 applyPreset(option.value);
                 clearAiSuggested('level');
               }}
-              className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 transition-all cursor-pointer ${
-                isActive
-                  ? 'bg-indigo-600/20 border-indigo-500'
-                  : 'bg-slate-950 border-slate-800 hover:border-slate-700'
-              }`}
+              className={buttonClass({
+                variant: isActive ? 'primary' : 'secondary',
+                size: 'sm',
+                className: 'w-full justify-center'
+              })}
             >
-              <span className={`text-xs font-bold ${isActive ? 'text-indigo-200' : 'text-slate-200'}`}>
-                {option.label}
-              </span>
+              <span className="text-xs font-medium">{option.label}</span>
               <ModeHint text={option.hint} label={option.label} />
             </button>
           );
@@ -956,17 +962,17 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
    * the system dialog, and the button that actually connects (and reads) the folder.
    */
   const folderBlock = (
-    <div className="space-y-2.5 bg-slate-950/60 rounded-xl p-3.5">
+    <div className="space-y-2.5 border-t border-slate-800 pt-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
-          <FolderOpen className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span className="text-xs font-bold text-slate-200 truncate">{t.setup.folderLabel}</span>
+          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+          <span className="truncate text-xs font-medium text-slate-300">{t.setup.folderLabel}</span>
         </div>
         {folderScan && !isChangingFolder && (
           <button
             type="button"
             onClick={() => setIsChangingFolder(true)}
-            className="bg-slate-800/80 hover:bg-slate-700 border border-slate-700/80 text-slate-300 hover:text-white text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer shrink-0"
+            className={buttonClass({ variant: 'secondary', size: 'xs' })}
           >
             {t.setup.folderChange}
           </button>
@@ -975,18 +981,17 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
 
       {folderScan && !isChangingFolder ? (
         /* One line, one fact, one action: the folder is already doing its job. */
-        <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2.5">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2.5">
+          <div className="min-w-0 space-y-0.5">
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="text-xs font-bold text-emerald-300">{t.setup.folderConnected}</span>
+              <span className="text-xs font-medium text-slate-200">{t.setup.folderConnected}</span>
               <span className="text-[11px] text-slate-400">
                 {t.setup.folderFiles}:{' '}
-                <span className="font-bold text-slate-300">{folderScan.files.length}</span>
+                <span className="tabular-nums text-slate-300">{folderScan.files.length}</span>
               </span>
             </div>
             {/* The whole path is in the tooltip: a long one must not push the plate out of shape. */}
-            <p className="text-[11px] font-mono text-slate-400 truncate" title={folderScan.root}>
+            <p className="truncate font-mono text-[11px] text-slate-400" title={folderScan.root}>
               {folderScan.root}
             </p>
           </div>
@@ -1021,7 +1026,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
               type="button"
               onClick={handlePickFolder}
               disabled={isPickingFolder || isFolderBusy}
-              className="bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-60 text-slate-100 font-semibold text-xs px-3 py-2.5 rounded-lg border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center justify-center gap-2 shrink-0"
+              className={buttonClass({ variant: 'secondary', size: 'md' })}
             >
               <FolderOpen className="w-3.5 h-3.5" />
               <span>{t.setup.folderChoose}</span>
@@ -1030,7 +1035,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
               type="button"
               onClick={() => connectFolder()}
               disabled={!folderPath.trim() || isFolderBusy}
-              className="bg-emerald-700 enabled:hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs px-3 py-2.5 rounded-lg transition-colors enabled:cursor-pointer shrink-0 inline-flex items-center justify-center gap-2"
+              className={buttonClass({ variant: 'primary', size: 'md' })}
             >
               {isFolderBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               <span>{t.setup.folderConnect}</span>
@@ -1053,7 +1058,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                 setFolderPath(folderScan.root);
                 setFolderError('');
               }}
-              className="text-[11px] font-semibold text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+              className={buttonClass({ variant: 'ghost', size: 'xs' })}
             >
               {t.setup.folderKeepConnected}
             </button>
@@ -1091,19 +1096,19 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
               </h2>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowApiSettings(true)}
-                className="text-slate-400 hover:text-indigo-400 text-xs font-semibold px-2.5 py-1 bg-slate-800 rounded-lg cursor-pointer hover:bg-slate-700 transition-colors flex items-center gap-1.5"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                <span>API</span>
-              </button>
-              <button
-                onClick={onClose}
-                className="text-slate-400 hover:text-white text-xs font-semibold px-2.5 py-1 bg-slate-800 rounded-lg cursor-pointer hover:bg-slate-700 transition-colors"
-              >
-                ✕ {t.common.close}
-              </button>
+            <button
+              onClick={() => setShowApiSettings(true)}
+              className={buttonClass({ variant: 'ghost', size: 'xs' })}
+            >
+              <Settings className="h-3.5 w-3.5" />
+              <span>API</span>
+            </button>
+            <button
+              onClick={onClose}
+              className={buttonClass({ variant: 'ghost', size: 'xs' })}
+            >
+              ✕ {t.common.close}
+            </button>
             </div>
           </div>
 
@@ -1111,25 +1116,27 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
           <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
             <button
               onClick={() => setActiveTab('idea')}
-              className={`py-2 px-4 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                activeTab === 'idea'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              aria-pressed={activeTab === 'idea'}
+              className={buttonClass({
+                variant: activeTab === 'idea' ? 'primary' : 'ghost',
+                size: 'sm',
+                className: 'w-full'
+              })}
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="h-3.5 w-3.5" />
               <span>{t.setup.tabIdea}</span>
             </button>
 
             <button
               onClick={() => setActiveTab('import')}
-              className={`py-2 px-4 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                activeTab === 'import'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              aria-pressed={activeTab === 'import'}
+              className={buttonClass({
+                variant: activeTab === 'import' ? 'primary' : 'ghost',
+                size: 'sm',
+                className: 'w-full'
+              })}
             >
-              <Upload className="w-4 h-4" />
+              <Upload className="h-3.5 w-3.5" />
               <span>{t.setup.tabImport}</span>
             </button>
           </div>
@@ -1229,7 +1236,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                 </div>
 
                 {/* The idea analysis is an explicit action, never something that happens while typing. */}
-                <div className="bg-slate-950/90 border border-slate-800 hover:border-indigo-500/40 rounded-xl p-3.5 space-y-3 transition-all shadow-md">
+                <div className="space-y-3 border-t border-slate-800 pt-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5">
                       <div className="p-2 rounded-lg bg-indigo-500/15 text-indigo-400">
@@ -1253,7 +1260,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                       onClick={handleRunAiAnalysis}
                       disabled={!canRunAiAnalysis}
                       title={canRunAiAnalysis ? undefined : t.setup.ideaRequiredHint}
-                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm bg-indigo-600 text-white enabled:hover:bg-indigo-500 shadow-indigo-600/20 disabled:opacity-50"
+                      className={buttonClass({ variant: 'primary', size: 'sm' })}
                     >
                       <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
                       <span>
@@ -1302,7 +1309,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                               setIdeaText(enriched);
                               runAiAnalysisAndAutoSelect(enriched);
                             }}
-                            className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                            className={buttonClass({ variant: 'warning', size: 'xs' })}
                           >
                             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                             <span>{language === 'ru' ? 'Дополнить примерными деталями' : 'Enrich with sample details'}</span>
@@ -1349,19 +1356,30 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                   <button
                     type="button"
                     onClick={() => setShowDetails(!showDetails)}
-                    className="w-full flex items-center justify-between gap-2 bg-slate-950/60 border border-slate-800/80 hover:border-slate-700 rounded-xl px-3.5 py-3 text-xs font-bold text-slate-200 transition-colors cursor-pointer"
+                    className={buttonClass({
+                      variant: 'secondary',
+                      size: 'md',
+                      className: 'w-full justify-between'
+                    })}
                   >
-                    <span className="flex items-center gap-2">
-                      <Settings className="w-4 h-4 text-slate-400" />
-                      <span>{showDetails ? t.setup.detailsHide : t.setup.detailsShow}</span>
-                    </span>
-                    <span className="flex items-center gap-2">
-                      {aiFields.length > 0 && <AiChip />}
-                      {showDetails ? (
-                        <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                      )}
+                    {/*
+                      One full-width row: the button's own class centres its content, so the two
+                      ends are put in a single wrapper that takes the whole width — otherwise the
+                      chevron sat beside the label instead of at the far edge.
+                    */}
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span className="flex items-center gap-2">
+                        <Settings className="h-3.5 w-3.5 text-slate-400" />
+                        <span>{showDetails ? t.setup.detailsHide : t.setup.detailsShow}</span>
+                      </span>
+                      <span className="flex items-center gap-2">
+                        {aiFields.length > 0 && <AiChip />}
+                        {showDetails ? (
+                          <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                        )}
+                      </span>
                     </span>
                   </button>
 
@@ -1482,7 +1500,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
 
                 {/* Reliability Guarantees Checklist */}
                 <div
-                  className={`space-y-2 bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5 ${
+                  className={`space-y-2 border-t border-slate-800 pt-4 ${
                     showDetails ? '' : 'hidden'
                   }`}
                 >
@@ -1543,7 +1561,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                   <button
                     onClick={handleFetchQuestions}
                     disabled={!canStartAnalysis}
-                    className="bg-indigo-600 enabled:hover:bg-indigo-500 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 enabled:cursor-pointer disabled:opacity-50"
+                    className={buttonClass({ variant: 'primary', size: 'md' })}
                   >
                     {isLoadingQuestions ? (
                       <>
@@ -1561,7 +1579,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                   <button
                     onClick={handleGenerateIdeaDirect}
                     disabled={!canStartAnalysis}
-                    className="bg-slate-800 enabled:hover:bg-slate-700 text-slate-200 font-semibold text-xs py-3 rounded-xl transition-all flex items-center justify-center gap-2 enabled:cursor-pointer disabled:opacity-50"
+                    className={buttonClass({ variant: 'secondary', size: 'md' })}
                   >
                     {isGenerating ? (
                       <>
@@ -1593,7 +1611,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                   </div>
                   <button
                     onClick={() => setWizardStep(1)}
-                    className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-lg cursor-pointer"
+                    className={buttonClass({ variant: 'ghost', size: 'xs' })}
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
                     <span>{t.setup.backButton}</span>
@@ -1654,16 +1672,16 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                                     key={opt}
                                     type="button"
                                     onClick={() => setTradeOffChoices({ ...tradeOffChoices, [t.id]: opt })}
-                                    className={`p-2.5 rounded-lg border text-xs text-left transition-all cursor-pointer font-medium ${
-                                      isSelected
-                                        ? 'bg-indigo-600/30 border-indigo-500 text-indigo-200 shadow-sm'
-                                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                                    }`}
+                                    className={buttonClass({
+                                      variant: isSelected ? 'primary' : 'secondary',
+                                      size: 'sm',
+                                      className: 'w-full justify-between text-left'
+                                    })}
                                   >
-                                    <div className="flex items-center justify-between">
+                                    <span className="flex w-full items-center justify-between gap-2">
                                       <span>{opt}</span>
-                                      {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
-                                    </div>
+                                      {isSelected && <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-indigo-300" />}
+                                    </span>
                                   </button>
                                 );
                               })}
@@ -1682,7 +1700,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                 <button
                   onClick={handleGenerateIdeaDirect}
                   disabled={isGenerating || !canStartAnalysis}
-                  className="w-full bg-indigo-600 enabled:hover:bg-indigo-500 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 enabled:cursor-pointer disabled:opacity-50 mt-4"
+                  className={buttonClass({ variant: 'primary', size: 'md', className: 'mt-4 w-full' })}
                 >
                   {isGenerating ? (
                     <>
@@ -1828,7 +1846,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                 type="button"
                 onClick={() => handleUnderstandWorkspace('folder')}
                 disabled={isUnderstanding || (!folderScan && !folderPath.trim())}
-                className="w-full bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs py-3 rounded-xl transition-all enabled:cursor-pointer flex items-center justify-center gap-2"
+                className={buttonClass({ variant: 'primary', size: 'md', className: 'w-full' })}
               >
                 {isUnderstanding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 <span>{isUnderstanding ? t.setup.importReading : t.setup.importUnderstandFolder}</span>
@@ -1898,18 +1916,18 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={handleCreateFromImport}
-                    disabled={isGenerating}
-                    className="flex-1 bg-emerald-700 enabled:hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-xs py-3 rounded-xl transition-all enabled:cursor-pointer flex items-center justify-center gap-2"
+                  onClick={handleCreateFromImport}
+                  disabled={isGenerating}
+                  className={buttonClass({ variant: 'success', size: 'md', className: 'flex-1' })}
                   >
                     {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                     <span>{isGenerating ? t.setup.analyzing : t.setup.importCreateContinue}</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleUnderstandWorkspace(understanding.source)}
-                    disabled={isUnderstanding}
-                    className="bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold text-xs px-3 py-3 rounded-xl border border-slate-700 transition-colors enabled:cursor-pointer inline-flex items-center gap-2"
+                  onClick={() => handleUnderstandWorkspace(understanding.source)}
+                  disabled={isUnderstanding}
+                  className={buttonClass({ variant: 'secondary', size: 'md' })}
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                     <span>{t.setup.importReRead}</span>
@@ -1937,7 +1955,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ onAddProject, onClos
                 type="button"
                 onClick={() => handleUnderstandWorkspace('paths')}
                 disabled={isUnderstanding || !importText.trim()}
-                className="w-full bg-slate-800 enabled:hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold text-xs py-2.5 rounded-xl transition-all enabled:cursor-pointer flex items-center justify-center gap-2"
+                className={buttonClass({ variant: 'secondary', size: 'md', className: 'w-full' })}
               >
                 {isUnderstanding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 <span>{t.setup.importUnderstandList}</span>
