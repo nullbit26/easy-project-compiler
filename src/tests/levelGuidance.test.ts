@@ -194,8 +194,13 @@ describe('Working mode: autonomy, never quality', () => {
       for (const line of qualityBlock(true, testRunner).split('\n')) {
         expect(promptText).toContain(line.replace(/^- /, ''));
       }
-      // The demand itself never disappears — only its wording follows the folder.
-      expect(promptText).toContain('Проверки');
+      /*
+       * The demand itself never disappears — only its wording follows the folder, and the loop above
+       * has already proved the chosen wording is present. What is pinned here is the block that
+       * carries it: the old assertion looked for the word «Проверки», which is only one of the two
+       * wordings and made the test depend on whether the machine had a folder with a test script.
+       */
+      expect(promptText).toContain('## Требования к качеству кода');
       qualitySections.add(sectionOf(promptText, '## Требования к качеству кода', '## Критерии приемки'));
     }
 
