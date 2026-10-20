@@ -8,7 +8,9 @@ import {
   streamAutonomousRun,
   type PipelineTaskInput
 } from '../services/api';
+import { connectProjectFolder, sameFolder } from '../services/projectFolder';
 import { autopilotFeed } from '../services/autopilotFeed';
+import { AiMosaic } from './ui/AiMosaic';
 import { IconButton } from './ui/Button';
 
 interface ProjectState {
@@ -16,6 +18,46 @@ interface ProjectState {
   projectType?: string;
   engineOrFramework?: string;
   language?: string;
+  /** The folder this project was created with; the loop may only write into it. */
+  workspaceRoot?: string;
+}
+
+/**
+ * The loop writes into whatever folder the server has connected, so it has to be this project's.
+ *
+ * A server that has been running since before the folder was connected (or one restarted without
+ * its data file) answers `no_workspace` while the project still remembers its own path — that is a
+ * connection to repair, not a reason to fail the run. A server bound to a *different* folder is the
+ * opposite: starting there would write another project's code into this one, so the run is refused
+ * with the reason instead of silently switching the folder.
+ *
+ * A project whose own path was never recorded can still run: the app has one connected folder, and
+ * that is the folder this project's Files screen shows. It is only when neither side can name one
+ * that the refusal is the honest answer — asked here, in the window's language, instead of letting
+ * the start route print its own English sentence.
+ *
+ * Returns the sentence to show, or `null` when the run may start.
+ */
+async function ensureProjectFolder(
+  project: ProjectState | null,
+  language: string | undefined,
+  t: any
+): Promise<string | null> {
+  const wanted = project?.workspaceRoot;
+  // One resolver for every screen: it tells which folder the server holds and connects the project's
+  // own one when the server lost it. A folder that belongs to another project is never switched from
+  // here — writing this project's code into that one is the one thing the refusal exists for.
+  const folder = await connectProjectFolder(project, language, { bindWhenDifferent: false });
+  if (folder.error) {
+    // Gone, read-only, or not a folder: the bind route words the reason in the window's language.
+    return folder.error?.userMessage || t.plan.autoCodeNoFolder;
+  }
+  // Whatever the connect route answers, the folder this run may write into is now the project's.
+  if (folder.connected) return null;
+  if (wanted && folder.root) {
+    return sameFolder(folder.root, wanted) ? null : t.plan.autoCodeWrongFolder;
+  }
+  return folder.root ? null : t.plan.autoCodeNoFolder;
 }
 
 interface AutopilotPlateProps {
@@ -53,10 +95,14 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
   const ru = language !== 'en';
   const [lines, setLines] = useState<string[]>([]);
   const [ended, setEnded] = useState<'running' | 'completed' | 'failed'>('running');
+  /** True when the request never reached the loop: checks have not run, so they cannot have failed. */
+  const [startFailed, setStartFailed] = useState(false);
   const [attemptCount, setAttemptCount] = useState(0);
   const [maxAttempts, setMaxAttempts] = useState(4);
   const [doneCount, setDoneCount] = useState(0);
   const [totalCount, setTotalCount] = useState(pipeline?.tasks.length || 1);
+  /** True when the run finished without a check: written, not confirmed. */
+  const [unverified, setUnverified] = useState(false);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const verdictRef = useRef(pipeline?.onTaskDone);
 
@@ -82,6 +128,9 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
         const taskLine = lineFor(taskEvent, ru, t);
         setLines((prev) => [...prev, taskLine]);
         autopilotFeed.push(taskEvent, taskLine);
+        if (taskEvent.type === 'run_completed' && (taskEvent.detail as { verdict?: string } | undefined)?.verdict === 'none') {
+          setUnverified(true);
+        }
         if (
           taskEvent.type === 'run_completed' ||
           taskEvent.type === 'run_failed'
@@ -108,6 +157,23 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
          * every earlier one.
          */
         autopilotFeed.begin({ title: task.title, total: pipeline?.tasks.length || 1 });
+        /*
+         * One connection check before the request: the canvas shows the project's folder, and the
+         * server is the side that actually writes. Repairing an empty server here is what makes
+         * the card work after the app was restarted, and refusing a foreign folder is what keeps
+         * the run out of somebody else's project.
+         */
+        // The language here is the window's, not the project's stack: it is what the server
+        // answers in, exactly as the bind screen sends it.
+        const blocked = await ensureProjectFolder(project, language, t);
+        if (!alive) return;
+        if (blocked) {
+          setLines([blocked]);
+          setEnded('failed');
+          setStartFailed(true);
+          autopilotFeed.fail(blocked);
+          return;
+        }
         if (pipeline) {
           setTotalCount(pipeline.tasks.length);
           const created = await startPipelineApi({
@@ -115,7 +181,8 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
             projectName: project?.name,
             projectType: project?.projectType,
             engineOrFramework: project?.engineOrFramework,
-            language: undefined
+            // The window's language, not the project's stack: the server words its log with it.
+            language
           });
           if (!alive) return;
           setDoneCount(0);
@@ -143,6 +210,12 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
             const translated = lineFor(event, ru, t);
             setLines((prev) => [...prev, translated]);
             autopilotFeed.push(event, translated);
+            if (event.type === 'run_failed' && !event.attempt) {
+              // The pipeline never started (no key, no folder): say that, not "checks failed".
+              setEnded('failed');
+              setStartFailed(true);
+              autopilotFeed.finish('failed');
+            }
             if (
               event.type === 'attempt_started' &&
               event.runId !== ((event.detail as unknown as { runId?: string })?.runId || event.runId)
@@ -161,7 +234,8 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
           projectName: project?.name,
           projectType: project?.projectType,
           engineOrFramework: project?.engineOrFramework,
-          language: project?.language
+          // `project.language` is TypeScript or GDScript; the log needs the reader's language.
+          language
         });
         if (!alive) return;
         setMaxAttempts(created.maxAttempts);
@@ -174,18 +248,37 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
           autopilotFeed.push(event, translated);
           if (event.type === 'run_completed') {
             setEnded('completed');
+            setUnverified((event.detail as { verdict?: string } | undefined)?.verdict === 'none');
             autopilotFeed.finish('completed');
           }
           if (event.type === 'run_failed') {
             setEnded('failed');
+            // No attempt number means the loop stopped before it ever reached the model (no
+            // key, no folder): the checks have not run, so they cannot be what failed.
+            setStartFailed(!event.attempt);
             autopilotFeed.finish('failed');
           }
         });
       } catch (err: any) {
         if (!alive) return;
-        const failure = err?.userMessage || err?.message || (ru ? 'Запуск не удался.' : 'The run could not start.');
+        /*
+         * The screen already knows two of the server's refusals, and neither is about the work:
+         * another run is in progress, or there is nowhere to write. Printing the transport's own
+         * English sentence in a Russian window reads like a crash, and "checks failed" for a run
+         * that never started is simply not true.
+         */
+        const noFolder = err?.details?.reason === 'no_workspace';
+        const failure =
+          err?.status === 409
+            ? t.plan.autoCodeRunInProgress
+            : noFolder
+              ? t.plan.autoCodeNoFolder
+              : err?.status === 400 && !project?.workspaceRoot
+                ? t.plan.autoCodeNoFolder
+                : err?.userMessage || err?.message || (ru ? 'Запуск не удался.' : 'The run could not start.');
         setLines([failure]);
         setEnded('failed');
+        setStartFailed(true);
         autopilotFeed.fail(failure);
       }
     };
@@ -205,24 +298,34 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
   }, [lines]);
 
   const statusColor =
-    ended === 'completed' ? 'text-emerald-300' : ended === 'failed' ? 'text-rose-300' : 'text-indigo-300';
+    ended === 'failed'
+      ? 'text-rose-300'
+      : ended === 'completed'
+      ? unverified
+        ? 'text-amber-300'
+        : 'text-emerald-300'
+      : 'text-indigo-300';
 
-  const statusLine = pipeline
+  // A run with no checks configured is not a run whose checks passed, and the header says so.
+  const completedNotice = unverified ? t.plan.autoCodeUnverifiedNotice : t.plan.autoCodeCompletedNotice;
+  const statusLine = startFailed
+    ? t.plan.autoCodeStartFailed
+    : pipeline
     ? ru
       ? ended === 'running'
         ? `${t.plan.autoCodeRunning} · ${doneCount}/${totalCount} задач`
         : ended === 'completed'
-        ? t.plan.autoCodeCompletedNotice
+        ? completedNotice
         : t.plan.autoCodeFailedNotice
       : ended === 'running'
       ? `${t.plan.autoCodeRunning} · ${doneCount}/${totalCount} tasks`
       : ended === 'completed'
-      ? t.plan.autoCodeCompletedNotice
+      ? completedNotice
       : t.plan.autoCodeFailedNotice
     : ended === 'running'
     ? `${t.plan.autoCodeRunning} · ${attemptCount}/${maxAttempts}`
     : ended === 'completed'
-    ? t.plan.autoCodeCompletedNotice
+    ? completedNotice
     : t.plan.autoCodeFailedNotice;
 
   if (docked) return null;
@@ -235,11 +338,17 @@ export const AutopilotPlate: React.FC<AutopilotPlateProps> = ({ task, project, o
     >
       <div className="flex items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
         <span className={`text-[11px] font-bold flex items-center gap-2 ${statusColor}`}>
-          <span
-            className={`w-2 h-2 rounded-full ${
-              ended === 'running' ? 'bg-indigo-400 animate-pulse' : ended === 'completed' ? 'bg-emerald-400' : 'bg-rose-400'
-            }`}
-          />
+          {/* While the loop runs, the mark does the telling; a verdict keeps the plain dot, because
+              by then there is nothing in motion to show. */}
+          {ended === 'running' ? (
+            <AiMosaic />
+          ) : (
+            <span
+              className={`w-2 h-2 rounded-full ${
+                ended === 'completed' ? (unverified ? 'bg-amber-400' : 'bg-emerald-400') : 'bg-rose-400'
+              }`}
+            />
+          )}
           {statusLine}
         </span>
         <IconButton label={t.common.cancel} icon={X} size="xs" onClick={onClose} />

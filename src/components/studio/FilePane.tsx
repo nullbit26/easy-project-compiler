@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { FileCode, FolderOpen, Loader2, RefreshCw, Search } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { fetchWorkspaceApi, WorkspaceFileEntry } from '../../services/api';
+import { useFolderRevision } from '../../services/folderFeed';
 import { formatBytes } from '../../utils/byteSize';
 import { IconButton } from '../ui/Button';
+import { PaneActionsSlot } from './paneActions';
 import { TASK_FILE_DRAG_TYPE } from '../../utils/taskFiles';
 
 interface FilePaneProps {
@@ -26,6 +28,8 @@ export const FilePane: React.FC<FilePaneProps> = ({ activePath, onOpenFile }) =>
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('');
+  /** Files connected a different folder while this window stayed open. */
+  const folderRevision = useFolderRevision();
 
   const load = () => {
     setLoading(true);
@@ -41,8 +45,9 @@ export const FilePane: React.FC<FilePaneProps> = ({ activePath, onOpenFile }) =>
 
   useEffect(() => {
     load();
+    // A new folder is a new list; the language is re-read for its error message.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language]);
+  }, [language, folderRevision]);
 
   const visible = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -70,6 +75,7 @@ export const FilePane: React.FC<FilePaneProps> = ({ activePath, onOpenFile }) =>
           onClick={load}
           disabled={loading}
         />
+        <PaneActionsSlot />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto py-1">

@@ -61,6 +61,8 @@ import {
 interface ProjectWorkspaceProps {
   project: ProjectState | null;
   onSyncProjectFiles?: (files: ProjectFile[], root: string) => void;
+  /** Keeps the bound folder on the project itself; the canvas needs the path by name later. */
+  onProjectFolderBound?: (root: string) => void;
   onOpenNewProjectModal?: () => void;
 }
 
@@ -114,6 +116,7 @@ function formattingLine(formatting: FormattingResult | null | undefined, ru: boo
 export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
   project,
   onSyncProjectFiles,
+  onProjectFolderBound,
   onOpenNewProjectModal
 }) => {
   const { language } = useLanguage();
@@ -274,6 +277,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
       setWorkspace(state);
       setChanges(null);
       setApplyResult(null);
+      // The folder outlives this screen: the canvas and the Auto run find it on the project.
+      if (state.root) onProjectFolderBound?.(state.root);
       showToast(
         ru
           ? `Папка подключена: ${state.root} (файлов: ${state.files.length})`
@@ -958,7 +963,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     <button
                       onClick={handleSaveFile}
                       disabled={isSavingFile || fileDraft === openedFile.content}
-                      className={buttonClass({ variant: 'success', size: 'xs' })}
+                      className={buttonClass({ variant: 'primary', size: 'xs' })}
                     >
                       {isSavingFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                       <span>{ru ? 'Сохранить в файл' : 'Save to file'}</span>
@@ -981,7 +986,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     onChange={(e) => setFileDraft(e.target.value)}
                     spellCheck={false}
                     rows={14}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-[11px] font-mono text-slate-200 focus:border-emerald-600 leading-relaxed"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-[11px] font-mono text-slate-200 focus:border-indigo-600 leading-relaxed"
                   />
                 )}
               </div>
@@ -992,7 +997,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Wand2 className="w-4 h-4 text-indigo-400" />
+                    <Wand2 className="w-4 h-4 text-slate-500" />
                     <span>{ru ? 'Сгенерировать изменения' : 'Generate changes'}</span>
                   </h4>
                 </div>
@@ -1076,7 +1081,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                                       : [...prev, change.path]
                                   )
                                 }
-                                className="accent-emerald-500 cursor-pointer shrink-0"
+                                className="accent-indigo-500 cursor-pointer shrink-0"
                                 title={ru ? 'Записать этот файл на диск' : 'Write this file to disk'}
                               />
                               <button
@@ -1169,24 +1174,29 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                         );
                       })}
 
-                      <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={formatAfterWrite}
-                          onChange={(e) => setFormatAfterWrite(e.target.checked)}
-                          className="accent-emerald-500 cursor-pointer"
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                        <label className="flex cursor-pointer items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={formatAfterWrite}
+                            onChange={(e) => setFormatAfterWrite(e.target.checked)}
+                            className="accent-indigo-500 cursor-pointer"
+                          />
+                          <span>{ru ? 'Привести в порядок' : 'Tidy up'}</span>
+                        </label>
+                        <HelpHint
+                          text={
+                            ru
+                              ? 'Записанные файлы пройдут через Prettier, Biome или Ruff — если форматтер уже есть в папке. Ничего не устанавливается.'
+                              : 'The written files go through Prettier, Biome or Ruff — if the folder already has one. Nothing is installed.'
+                          }
                         />
-                        <span>
-                          {ru
-                            ? 'Привести записанные файлы в порядок (если в папке есть Prettier, Biome или Ruff)'
-                            : 'Tidy up the written files (if the folder has Prettier, Biome or Ruff)'}
-                        </span>
-                      </label>
+                      </div>
 
                       <button
                         onClick={handleApply}
                         disabled={isApplying}
-                        className={buttonClass({ variant: 'success', size: 'md', className: 'w-full' })}
+                        className={buttonClass({ variant: 'primary', size: 'md', className: 'w-full' })}
                       >
                         {isApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         <span>
@@ -1252,28 +1262,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 </div>
               )}
 
-              {(workspace?.backups?.length || 0) > 0 && (
-                <div className="pt-2 border-t border-slate-800 space-y-1.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    {ru ? 'Копии перед записью (для отката)' : 'Backups taken before writing'}
-                  </span>
-                  {workspace!.backups.slice(0, 3).map((backup) => (
-                    <div key={backup.id} className="flex items-center justify-between gap-2 text-[10px]">
-                      <span className="text-slate-400 font-mono truncate">
-                        {new Date(backup.createdAt).toLocaleString()} • {backup.fileCount}{' '}
-                        {ru ? 'файл(ов)' : 'file(s)'}
-                      </span>
-                      <button
-                        onClick={() => handleUndo(backup.id)}
-                        disabled={isUndoing}
-                        className={buttonClass({ variant: 'ghost', size: 'xs' })}
-                      >
-                        {ru ? 'Вернуть' : 'Restore'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             <VerificationPanel

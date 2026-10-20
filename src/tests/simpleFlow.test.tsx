@@ -168,12 +168,67 @@ const failingVerification = {
 
 /** Set while a review is deliberately left hanging, so the screen can be looked at mid-flight. */
 let releaseReview: ((data: any) => void) | null = null;
+/** The same, for the compile request: the terminal is only readable while it is open. */
+let releaseCompile: ((data: any) => void) | null = null;
+/** Holds the last frame of a streamed compile, so the live view can be looked at mid-request. */
+let releaseStream: (() => void) | null = null;
+
+/**
+ * A streaming answer, frame by frame.
+ *
+ * Deliberately not a real `Response`: the test needs to hand over one frame at a time and to keep
+ * the final frame (the result) waiting until the screen has been read. The object carries exactly
+ * what the API layer reads — status, content type and a reader.
+ */
+function streamResponse(frames: string[], holdLast = false, signal?: AbortSignal) {
+  const encoder = new TextEncoder();
+  let index = 0;
+  const gate = new Promise<void>((resolve) => {
+    releaseStream = resolve;
+  });
+  const abortError = () => Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+  // What a real `fetch` does when its signal is aborted: the pending read rejects.
+  const aborted = new Promise<never>((_resolve, reject) => {
+    if (signal?.aborted) reject(abortError());
+    signal?.addEventListener('abort', () => reject(abortError()), { once: true });
+  });
+  aborted.catch(() => {
+    /* Only the raced read listens to this. */
+  });
+  const reader = {
+    read: async () => {
+      if (signal?.aborted) throw abortError();
+      if (index >= frames.length) return { done: true, value: undefined };
+      if (holdLast && index === frames.length - 1) await Promise.race([gate, aborted]);
+      if (signal?.aborted) throw abortError();
+      return { done: false, value: encoder.encode(frames[index++]) };
+    },
+    releaseLock: () => {}
+  };
+  return {
+    ok: true,
+    status: 200,
+    headers: {
+      get: (name: string) => (name.toLowerCase() === 'content-type' ? 'text/event-stream; charset=utf-8' : null)
+    },
+    body: { getReader: () => reader }
+  } as unknown as Response;
+}
 
 function mockApi(
   reviewData: any = completedReview,
-  options: { deferReview?: boolean; verification?: any } = {}
+  options: {
+    deferReview?: boolean;
+    deferCompile?: boolean;
+    failCompile?: boolean;
+    verification?: any;
+    /** Answer the compile the way the live route does, one frame at a time. */
+    streamCompile?: boolean;
+    /** Keep the result frame waiting until `releaseStream` is called. */
+    holdStream?: boolean;
+  } = {}
 ) {
-  const spy = vi.spyOn(global, 'fetch').mockImplementation((input: any) => {
+  const spy = vi.spyOn(global, 'fetch').mockImplementation((input: any, init?: any) => {
     const url = typeof input === 'string' ? input : input?.url ?? '';
     const respond = (data: any) =>
       Promise.resolve({ ok: true, status: 200, json: async () => ({ success: true, data }) } as unknown as Response);
@@ -188,7 +243,45 @@ function mockApi(
         backups: []
       });
     }
-    if (url.includes('/api/prompt/compile')) return respond(compiledPrompt);
+    if (url.includes('/api/prompt/compile')) {
+      if (options.failCompile) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: async () => ({ success: false, error: 'Модель недоступна' })
+        } as unknown as Response);
+      }
+      if (options.deferCompile) {
+        return new Promise<Response>((resolve) => {
+          releaseCompile = (data: any) =>
+            resolve({ ok: true, status: 200, json: async () => ({ success: true, data }) } as unknown as Response);
+        });
+      }
+      if (options.streamCompile) {
+        const frame = (payload: any) => `data: ${JSON.stringify(payload)}\n\n`;
+        return Promise.resolve(
+          streamResponse(
+            [
+              frame({ type: 'attempt', provider: 'openrouter', model: 'deepseek/deepseek-chat' }),
+              frame({
+                type: 'delta',
+                text: '{"taskTitle":"Сделать кнопку сохранения","includedFiles":[],"promptText":"'
+              }),
+              frame({ type: 'delta', text: 'живой поток"}' }),
+              frame({
+                type: 'result',
+                success: true,
+                data: { ...compiledPrompt, promptText: 'СОБРАННЫЙ ПРОМПТ ДЛЯ НОВИЧКА' },
+                engine: 'openrouter'
+              })
+            ],
+            options.holdStream,
+            init?.signal
+          )
+        );
+      }
+      return respond(compiledPrompt);
+    }
     if (url.includes('/api/files/checks')) {
       return respond({
         checks: [
@@ -208,9 +301,15 @@ function mockApi(
     if (url.includes('/api/session/review')) {
       if (options.deferReview) {
         // A real answer takes 30-60 seconds; the test holds it open to look at the screen.
-        return new Promise<Response>((resolve) => {
+        return new Promise<Response>((resolve, reject) => {
           releaseReview = (data: any) =>
             resolve({ ok: true, status: 200, json: async () => ({ success: true, data }) } as unknown as Response);
+          // Cancelling aborts the request, and a real fetch rejects its pending promise.
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' })),
+            { once: true }
+          );
         });
       }
       return respond(reviewData);
@@ -302,6 +401,210 @@ describe('Beginner step-by-step mode', () => {
       timeout: 4000
     });
     expect(callCount(spy, '/api/files/apply')).toBe(1);
+  });
+
+  it('opens a live terminal the moment the prompt is requested, instead of a countdown card', async () => {
+    const project = makeProject('Beginner / Non-coder');
+    localStorage.setItem('easy_project_compiler_current_project', JSON.stringify(project));
+    localStorage.setItem('easy_project_compiler_projects', JSON.stringify([project]));
+    localStorage.setItem('easy_project_compiler_lang', 'ru');
+
+    const spy = mockApi(completedReview, { deferCompile: true });
+    render(<App />);
+
+    await waitFor(() => expect(window.location.hash).not.toBe('#/simple'), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('button', { name: /Пошаговый помощник/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/simple'), { timeout: 4000 });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Собрать промпт/ }));
+
+    /*
+     * The questionnaire does not wait beside a countdown: the form is replaced by the request's
+     * own log, written before the answer arrives — the task, the agent and the endpoint.
+     */
+    const log = await screen.findByRole('log');
+    expect(log.textContent).toContain('Сделать кнопку сохранения');
+    expect(log.textContent).toContain('Агент: DeepSeek / Web Chat');
+    expect(log.textContent).toContain('POST /api/prompt/compile');
+    expect(screen.queryByPlaceholderText(/Например: добавить кнопку/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Собрать промпт/ })).toBeNull();
+
+    // One status for the request: the terminal. The corner card counting seconds is not shown.
+    expect(screen.queryByText('Компилирую промпт')).toBeNull();
+
+    const entry = screen.getByRole('button', { name: /Пошаговый помощник/ });
+    await waitFor(() => expect(entry.getAttribute('data-helper-running')).toBe('true'));
+    expect(entry.className).toContain('epc-runner');
+
+    releaseCompile?.(compiledPrompt);
+    await waitFor(() => expect(screen.getByText('СОБРАННЫЙ ПРОМПТ ДЛЯ НОВИЧКА')).toBeInTheDocument(), {
+      timeout: 4000
+    });
+
+    // The log closes with the work, and the prompt is on the next step.
+    expect(screen.queryByRole('log')).toBeNull();
+    await waitFor(() => expect(entry.getAttribute('data-helper-running')).toBe('false'));
+    expect(callCount(spy, '/api/prompt/compile')).toBe(1);
+  });
+
+  it('shows the model writing the prompt, and names each step it reaches', async () => {
+    const project = makeProject('Beginner / Non-coder');
+    localStorage.setItem('easy_project_compiler_current_project', JSON.stringify(project));
+    localStorage.setItem('easy_project_compiler_projects', JSON.stringify([project]));
+    localStorage.setItem('easy_project_compiler_lang', 'ru');
+
+    const spy = mockApi(completedReview, { streamCompile: true, holdStream: true });
+    render(<App />);
+
+    await waitFor(() => expect(window.location.hash).not.toBe('#/simple'), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('button', { name: /Пошаговый помощник/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/simple'), { timeout: 4000 });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Собрать промпт/ }));
+
+    /*
+     * The answer is read while it is written: the terminal shows the model's own text, and the
+     * keys the compiler writes become plain lines — which model answered, that it is writing the
+     * prompt — instead of a countdown.
+     */
+    await waitFor(() => {
+      const trace = document.querySelector('[data-run-trace]');
+      expect(trace).not.toBeNull();
+      expect(trace?.textContent).toContain('живой поток');
+    }, { timeout: 4000 });
+
+    const log = screen.getByRole('log');
+    expect(log.textContent).toContain('Модель: openrouter / deepseek/deepseek-chat');
+    expect(log.textContent).toContain('пишет промпт');
+    expect(log.textContent).toContain('POST /api/prompt/compile?stream=1');
+
+    // The waiting line is the app's animated mark, not a sentence; the words stay for a screen reader.
+    const live = document.querySelector('[data-run-live]');
+    expect(live?.querySelector('.epc-mosaic')).not.toBeNull();
+    expect(live?.querySelector('.sr-only')?.textContent?.trim()).toBe('пишет ответ');
+
+    // The reading is slate at three weights; a coloured line was the thing that made it look cheap.
+    for (const line of Array.from(log.querySelectorAll('[data-run-line]'))) {
+      expect(line.className).not.toMatch(/text-(sky|emerald|rose|indigo|violet)-/);
+    }
+
+    // The result frame is still on its way, so the prompt is not claimed to be ready.
+    expect(screen.queryByText('СОБРАННЫЙ ПРОМПТ ДЛЯ НОВИЧКА')).toBeNull();
+
+    releaseStream?.();
+    await waitFor(() => expect(screen.getByText('СОБРАННЫЙ ПРОМПТ ДЛЯ НОВИЧКА')).toBeInTheDocument(), {
+      timeout: 4000
+    });
+    expect(callCount(spy, '/api/prompt/compile')).toBe(1);
+  });
+
+  it('stops the request from the terminal, and calls that stopped rather than failed', async () => {
+    const project = makeProject('Beginner / Non-coder');
+    localStorage.setItem('easy_project_compiler_current_project', JSON.stringify(project));
+    localStorage.setItem('easy_project_compiler_projects', JSON.stringify([project]));
+    localStorage.setItem('easy_project_compiler_lang', 'ru');
+
+    const spy = mockApi(completedReview, { streamCompile: true, holdStream: true });
+    render(<App />);
+
+    await waitFor(() => expect(window.location.hash).not.toBe('#/simple'), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('button', { name: /Пошаговый помощник/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/simple'), { timeout: 4000 });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Собрать промпт/ }));
+
+    // The running request carries one control, named twice for mouse and screen reader.
+    const cancel = await screen.findByRole('button', { name: 'Отменить' });
+    expect(cancel.getAttribute('title')).toBe('Отменить');
+    fireEvent.click(cancel);
+
+    // The stream is aborted, not left running behind a hidden card.
+    const compileCall = spy.mock.calls.find((call: any[]) =>
+      String(typeof call[0] === 'string' ? call[0] : call[0]?.url ?? '').includes('/api/prompt/compile')
+    ) as any[];
+    await waitFor(() => expect(compileCall[1].signal.aborted).toBe(true));
+
+    // The log stays above the form and says how it ended — no failure, and nothing written to the
+    // error line, because no error happened.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Отменить' })).toBeNull(), { timeout: 4000 });
+    const log = screen.getByRole('log');
+    expect(log.textContent).toContain('Отменено');
+    expect(screen.queryByText(/Не удалось собрать/)).toBeNull();
+    expect(screen.getByPlaceholderText(/Например: добавить кнопку/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Повторить/ })).toBeInTheDocument();
+    expect(callCount(spy, '/api/prompt/compile')).toBe(1);
+  });
+
+  it('stops the verdict, and keeps both the log and the answer that was being checked', async () => {
+    const project = makeProject('Beginner / Non-coder');
+    localStorage.setItem('easy_project_compiler_current_project', JSON.stringify(project));
+    localStorage.setItem('easy_project_compiler_projects', JSON.stringify([project]));
+    localStorage.setItem('easy_project_compiler_lang', 'ru');
+
+    const spy = mockApi(completedReview, { deferReview: true });
+    render(<App />);
+
+    await waitFor(() => expect(window.location.hash).not.toBe('#/simple'), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('button', { name: /Пошаговый помощник/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/simple'), { timeout: 4000 });
+
+    // Get to step 4 the normal way: a built prompt, then a pasted answer.
+    fireEvent.click(await screen.findByRole('button', { name: /Собрать промпт/ }));
+    await waitFor(() => expect(screen.getByText('СОБРАННЫЙ ПРОМПТ ДЛЯ НОВИЧКА')).toBeInTheDocument(), {
+      timeout: 4000
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Я вставил/ }));
+
+    const answerBox = await screen.findByPlaceholderText('Вставьте ответ агента...');
+    fireEvent.change(answerBox, {
+      target: { value: 'Готово.\n\n### src/main.ts\n```ts\nconsole.log("saved");\n```\n' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Проверить ответ/ }));
+
+    const cancel = await screen.findByRole('button', { name: 'Отменить' });
+    fireEvent.click(cancel);
+
+    const reviewCall = spy.mock.calls.find((call: any[]) =>
+      String(typeof call[0] === 'string' ? call[0] : call[0]?.url ?? '').includes('/api/session/review')
+    ) as any[];
+    await waitFor(() => expect(reviewCall[1].signal.aborted).toBe(true));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Отменить' })).toBeNull(), { timeout: 4000 });
+    // The log is the same one, ended honestly; the answer is still in the field to ask again.
+    expect(screen.getByRole('log').textContent).toContain('Отменено');
+    expect(screen.queryByText(/Не удалось проверить/)).toBeNull();
+    expect(screen.queryByText('Всё сделано')).toBeNull();
+    expect((screen.getByPlaceholderText('Вставьте ответ агента...') as HTMLTextAreaElement).value).toContain(
+      'console.log("saved")'
+    );
+    expect(screen.getByRole('button', { name: /Повторить/ })).toBeInTheDocument();
+    expect(callCount(spy, '/api/session/review')).toBe(1);
+  });
+
+  it('keeps the failed request log above the form, with a way to ask again', async () => {
+    const project = makeProject('Beginner / Non-coder');
+    localStorage.setItem('easy_project_compiler_current_project', JSON.stringify(project));
+    localStorage.setItem('easy_project_compiler_projects', JSON.stringify([project]));
+    localStorage.setItem('easy_project_compiler_lang', 'ru');
+
+    mockApi(completedReview, { failCompile: true });
+    render(<App />);
+
+    await waitFor(() => expect(window.location.hash).not.toBe('#/simple'), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('button', { name: /Пошаговый помощник/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/simple'), { timeout: 4000 });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Собрать промпт/ }));
+
+    // The log says how it ended, in the same place it was read while it ran…
+    await screen.findByRole('log');
+    await waitFor(() => expect(screen.getByRole('log').textContent).toContain('Ошибка · Модель недоступна'));
+    expect(screen.getByRole('log').textContent).toContain('POST /api/prompt/compile');
+
+    // …and the form comes back with the question that can be asked again.
+    expect(screen.getByPlaceholderText(/Например: добавить кнопку/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Повторить/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Собрать промпт/ })).toBeInTheDocument();
   });
 
   it('says the copy did not happen, instead of claiming it did', async () => {
@@ -598,12 +901,22 @@ describe('Beginner step-by-step mode', () => {
     );
     expect(screen.getByText('Сессия идёт')).toBeInTheDocument();
 
+    // The moving edge runs around the sidebar entry that leads here, not around the step card.
+    const helperEntry = screen.getByRole('button', { name: /Пошаговый помощник/ });
+    await waitFor(() => expect(helperEntry.getAttribute('data-helper-running')).toBe('true'));
+    expect(helperEntry.className).toContain('epc-runner');
+    expect(helperEntry.getAttribute('aria-busy')).toBe('true');
+    expect(container.querySelector('[data-simple-running="true"]')?.className || '').not.toContain('epc-runner');
+
     releaseReview?.(completedReview);
     await waitFor(() => expect(screen.getByText('Всё сделано')).toBeInTheDocument(), { timeout: 4000 });
 
     // The sign goes away with the work: an indicator still blinking after the verdict is a lie.
     await waitFor(() => expect(container.querySelector('[data-session-banner]')).toBeNull());
     expect(container.querySelector('[data-session-indicator]')).toBeNull();
+    await waitFor(() => expect(helperEntry.getAttribute('data-helper-running')).toBe('false'));
+    expect(helperEntry.className).not.toContain('epc-runner');
+    await waitFor(() => expect(container.querySelector('[data-simple-running="true"]')).toBeNull());
   });
 
   it('keeps the workspace folded for every other mode until the user reveals it', async () => {

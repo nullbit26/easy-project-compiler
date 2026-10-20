@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ProjectState } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { useSessionProgress } from '../services/sessionProgress';
+import { useAiActivity } from '../services/aiActivity';
 import { BuildBadge } from './BuildBadge';
 import { UpdateNotice } from './UpdateNotice';
 import {
@@ -87,6 +88,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
    * from anywhere in the workspace.
    */
   const session = useSessionProgress();
+  /*
+   * A request the helper started is the helper's own work.
+   *
+   * The entry that leads to the screen carries the moving light (the same `epc-runner` the update
+   * row uses), so "is it working?" is answered where the reader already looks to open the screen.
+   * The step card underneath is the form being filled in and says nothing of its own about the
+   * run; its `aria-busy` is still set for a screen reader.
+   */
+  const aiActivity = useAiActivity();
+  const helperRunning =
+    aiActivity.active &&
+    (aiActivity.kind === 'compile' || aiActivity.kind === 'review' || aiActivity.kind === 'diagnose');
+  const RUNNER_INK = { '--epc-runner-ink': 'rgb(129 140 248 / 0.95)' } as React.CSSProperties;
   const sessionPhaseLabel =
     session.phase === 'writing'
       ? t.simple.sessionPhaseWriting
@@ -310,6 +324,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {groupTabs.map((tab) => {
                   const Icon = tab.icon;
                   const isActive = activeTab === tab.id;
+                  const helperBusy = tab.id === 'simple_flow' && helperRunning;
                   return (
                     <button
                       key={tab.id}
@@ -317,11 +332,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         setActiveTab(tab.id);
                         if (onCloseMobile) onCloseMobile();
                       }}
+                      aria-busy={helperBusy || undefined}
+                      data-helper-running={helperBusy ? 'true' : 'false'}
+                      style={helperBusy ? RUNNER_INK : undefined}
                       className={`w-full flex items-center justify-between px-2.5 py-2 text-xs rounded-lg transition-all cursor-pointer ${
                         isActive
                           ? 'bg-indigo-600/20 text-indigo-200 font-semibold border-l-2 border-indigo-500 pl-2'
                           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 font-normal'
-                      }`}
+                      } ${helperBusy ? 'epc-runner' : ''}`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-indigo-400' : 'text-slate-400'}`} />
@@ -496,6 +514,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
+          const helperBusy = tab.id === 'simple_flow' && helperRunning;
           return (
             <button
               key={tab.id}
@@ -504,11 +523,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               title={tab.label}
               aria-label={tab.label}
               aria-current={isActive ? 'page' : undefined}
+              aria-busy={helperBusy || undefined}
+              data-helper-running={helperBusy ? 'true' : 'false'}
+              style={helperBusy ? RUNNER_INK : undefined}
               className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors cursor-pointer ${
                 isActive
                   ? 'bg-indigo-600/20 text-indigo-300 ring-1 ring-inset ring-indigo-500/40'
                   : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
-              }`}
+              } ${helperBusy ? 'epc-runner' : ''}`}
             >
               <Icon className="h-4 w-4" />
               {tab.id === 'simple_flow' && session.active && (

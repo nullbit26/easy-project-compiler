@@ -18,7 +18,7 @@ vi.mock('../services/api', async (importOriginal) => {
   return { ...actual, buildPreviewApi: vi.fn() };
 });
 
-import { buildPreviewApi } from '../services/api';
+import { ApiError, buildPreviewApi } from '../services/api';
 
 const buildPreviewApiMock = buildPreviewApi as unknown as ReturnType<typeof vi.fn>;
 
@@ -183,5 +183,23 @@ describe('Sandbox screen', () => {
 
     await waitFor(() => expect(screen.getByText('Папка проекта не подключена')).toBeTruthy());
     expect(container.querySelector('iframe')).toBeNull();
+  });
+
+  it('6. names the app server, not the status text, when the request never reached an API route', async () => {
+    /*
+     * The answer was the app's own HTML: a page served by a bare Vite or static server does that for
+     * every `/api/*`, so the API layer has only the status text and says "Server error: Not Found".
+     * The screen knows what that means — the preview is built by the server, and there is none here.
+     */
+    buildPreviewApiMock.mockRejectedValue(new ApiError(404, 'Server error: Not Found', undefined, 'not_json'));
+
+    renderScreen();
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Сервер приложения не отвечает — превью собирается только вместе с ним.')
+      ).toBeTruthy()
+    );
+    expect(screen.queryByText(/Server error/)).toBeNull();
   });
 });

@@ -89,6 +89,20 @@ function previousAttemptsOf(history: any[]): ReviewPreviousAttempt[] {
 }
 
 export async function reviewSession(req: Request, res: Response) {
+  /*
+   * The verdict is written by a provider like any other answer, so closing the window has to stop
+   * it: the response's close — with nothing of ours written — is the one that means nobody is
+   * reading, while `req` fires `close` as soon as express.json() has read the body.
+   */
+  const controller = new AbortController();
+  try {
+    (res as any)?.on?.('close', () => {
+      if (!(res as any).writableEnded) controller.abort();
+    });
+  } catch {
+    /* A response with no event emitter is still a response. */
+  }
+
   try {
     const { agentOutput, task, projectMap, stepNumber = 1, previousHistory = [], language, skillLevel } = req.body;
     const ai = hasAiProvider();
@@ -131,7 +145,7 @@ export async function reviewSession(req: Request, res: Response) {
         truncated,
         checkEvidence
       });
-      const parsed = await callAiJson(prompt, reviewSessionSchema);
+      const parsed = await callAiJson(prompt, reviewSessionSchema, { signal: controller.signal });
       if (parsed && parsed.status && typeof parsed.progressPercent === 'number') {
         // A model can still answer "Completed" over a folder that does not compile; the checks are
         // the part of this verdict that was measured rather than read, so they win.

@@ -298,6 +298,9 @@ describe('The check panel verdict', () => {
     expect(screen.getByText(/Бюджет превышен/)).toBeTruthy();
     expect(screen.getByText(/при пределе 500\.0 KB/)).toBeTruthy();
     expect(screen.getByText('ИИ: вернуть сборку в бюджет')).toBeTruthy();
+    // The verdict stays on the working screen; the field that writes the ceiling is a setting.
+    expect(screen.queryByRole('textbox', { name: 'Бюджет веса' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Настройки сборки' }));
     expect((screen.getByRole('textbox', { name: 'Бюджет веса' }) as HTMLInputElement).value).toBe('500 KB');
 
     cleanup();
@@ -309,10 +312,10 @@ describe('The check panel verdict', () => {
     // Nothing over budget, so nothing is offered to repair.
     expect(screen.queryByText('ИИ: вернуть сборку в бюджет')).toBeNull();
 
-    // No ceiling at all: the panel says so instead of inventing one.
+    // No ceiling at all: the working screen says nothing about one instead of inventing it.
     cleanup();
     renderPanel(report({ ok: true, passed: 1, failed: 0 }), budget(null));
-    expect(screen.getByText(/Бюджет веса не задан/)).toBeTruthy();
+    expect(screen.queryByText(/Бюджет/)).toBeNull();
 
     // A ceiling written down before anything was built is honest about what it can say.
     cleanup();
@@ -324,6 +327,7 @@ describe('The check panel verdict', () => {
     // still gets to write one down.
     cleanup();
     renderPanel(null, budget(null));
+    fireEvent.click(screen.getByRole('button', { name: 'Настройки сборки' }));
     expect(screen.getByRole('button', { name: 'Задать бюджет' })).toBeTruthy();
   });
 

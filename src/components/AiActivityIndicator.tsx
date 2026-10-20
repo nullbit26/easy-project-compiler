@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { CheckCircle2, XCircle } from 'lucide-react';
+import { AiMosaic } from './ui/AiMosaic';
 import { useLanguage } from '../context/LanguageContext';
 import { Translations } from '../i18n/translations';
 import { AiTaskKind, useAiActivity } from '../services/aiActivity';
@@ -27,7 +28,11 @@ const DONE_FLASH_MS = 1800;
  * Shows that the app is busy with an AI request: what it is doing, for how long, and what to
  * expect. A 30-60 second wait with no feedback looks like a freeze, so silence is the bug.
  */
-export const AiActivityIndicator: React.FC = () => {
+/**
+ * `hidden` is for the one screen that shows the request as a terminal of its own: two statuses
+ * for one request, one of them counting seconds in the corner, is the same lie told twice.
+ */
+export const AiActivityIndicator: React.FC<{ hidden?: boolean }> = ({ hidden = false }) => {
   const { t } = useLanguage();
   const { active, kind, startedAt, finishedAt, outcome } = useAiActivity();
   const [now, setNow] = useState(() => Date.now());
@@ -47,6 +52,7 @@ export const AiActivityIndicator: React.FC = () => {
     return () => clearTimeout(timer);
   }, [finishedAt]);
 
+  if (hidden) return null;
   if (!active && !showDone) return null;
 
   const failed = !active && outcome === 'error';
@@ -75,17 +81,25 @@ export const AiActivityIndicator: React.FC = () => {
         }`}
       >
         <div className="flex items-center gap-3">
+          {/*
+            While the model works the mark stands on its own — no tile, no ring, no frame around it.
+            A boxed mark reads as a button, and a square inside a square is exactly the kind of
+            furniture the mark is supposed to replace. The fixed 32 × 32 slot keeps the card from
+            jumping when a verdict replaces it with an icon.
+          */}
           <div
-            className={`shrink-0 rounded-lg border p-2 ${
+            className={`shrink-0 ${
               active
-                ? 'border-indigo-800 bg-indigo-950 text-indigo-300'
-                : failed
-                  ? 'border-rose-800 bg-rose-950 text-rose-400'
-                  : 'border-emerald-800 bg-emerald-950 text-emerald-400'
+                ? 'grid h-8 w-8 place-items-center'
+                : `rounded-lg border p-2 ${
+                    failed
+                      ? 'border-rose-800 bg-rose-950 text-rose-400'
+                      : 'border-emerald-800 bg-emerald-950 text-emerald-400'
+                  }`
             }`}
           >
             {active ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <AiMosaic />
             ) : failed ? (
               <XCircle className="h-4 w-4" />
             ) : (

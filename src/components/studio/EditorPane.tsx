@@ -3,6 +3,7 @@ import { Check, FileCode, Loader2, RotateCcw, Save } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { readWorkspaceFileApi, writeWorkspaceFileApi } from '../../services/api';
 import { IconButton } from '../ui/Button';
+import { PaneActionsRow, PaneActionsSlot } from './paneActions';
 import { formatBytes } from '../../utils/byteSize';
 
 interface EditorPaneProps {
@@ -83,13 +84,16 @@ export const EditorPane: React.FC<EditorPaneProps> = ({ path }) => {
 
   if (!path) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <FileCode className="h-6 w-6 text-slate-600" />
-        <p className="max-w-xs text-xs leading-relaxed text-slate-400">
-          {ru
-            ? 'Выберите файл в окне «Файлы» — он откроется здесь. Правки сохраняются прямо в папку проекта.'
-            : 'Pick a file in the Files window and it opens here. Edits are written straight into the project folder.'}
-        </p>
+      <div className="flex h-full min-h-0 flex-col">
+        <PaneActionsRow />
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+          <FileCode className="h-6 w-6 text-slate-600" />
+          <p className="max-w-xs text-xs leading-relaxed text-slate-400">
+            {ru
+              ? 'Выберите файл в окне «Файлы» — он откроется здесь. Правки сохраняются прямо в папку проекта.'
+              : 'Pick a file in the Files window and it opens here. Edits are written straight into the project folder.'}
+          </p>
+        </div>
       </div>
     );
   }
@@ -118,6 +122,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({ path }) => {
           onClick={() => void save()}
           className={saving ? 'animate-spin' : ''}
         />
+        <PaneActionsSlot />
       </div>
 
       {loading ? (

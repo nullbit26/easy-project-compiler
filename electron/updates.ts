@@ -446,6 +446,27 @@ export interface InstallSchedule {
  * window. `relaunch` is the difference between the two: with it the script starts the app again
  * once the new file is in place.
  */
+/**
+ * The environment the restarted build must NOT inherit.
+ *
+ * The shell tells its own server where the app is (`EPC_DIST_DIR`, `EPC_STATE_DIR`, …) by writing
+ * those variables into this process before loading the server bundle. The swap helper is started
+ * from this process, so a plain `spawn` would hand them to the new build — and the new build runs
+ * from a *different* temporary folder, because the portable launcher extracts every start afresh.
+ * Inheriting the old folder's `EPC_DIST_DIR` made the new build serve the web app from a directory
+ * its predecessor had already deleted: the server answered 500, and the window was black. A build
+ * that starts must start from its own paths, so these are removed before the helper is launched.
+ */
+export function launchEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...source };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('EPC_') || key === 'NODE_ENV' || key === 'PORT' || key === 'ELECTRON_RUN_AS_NODE') {
+      delete env[key];
+    }
+  }
+  return env;
+}
+
 export function scheduleUpdateInstall(options: {
   updateDir: string;
   exeName: string;
@@ -474,7 +495,9 @@ export function scheduleUpdateInstall(options: {
     const child = spawnImpl('cmd.exe', ['/c', scriptPath], {
       detached: true,
       stdio: 'ignore',
-      windowsHide: true
+      windowsHide: true,
+      // The restarted build reads its own folder; nothing here may point it at this process's.
+      env: launchEnvironment()
     });
     child.unref();
   } catch (error) {

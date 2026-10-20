@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { FolderOpen, Loader2 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { fetchWorkspaceApi } from '../../services/api';
+import { useFolderRevision } from '../../services/folderFeed';
 import { ProjectCheckStrip } from '../ProjectCheckStrip';
+import { PaneActionsRow } from './paneActions';
 
 /**
  * The verification panel as a window: the same strip the guided flow uses, so a run started here
@@ -14,6 +16,8 @@ export const ChecksPane: React.FC = () => {
   const ru = language === 'ru';
   const [root, setRoot] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Files connected a different folder while this window stayed open. */
+  const folderRevision = useFolderRevision();
 
   useEffect(() => {
     let cancelled = false;
@@ -31,33 +35,34 @@ export const ChecksPane: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [language]);
+  }, [language, folderRevision]);
 
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center gap-2 text-xs text-slate-400">
-        <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
-        {ru ? 'Смотрим, что можно проверить…' : 'Looking for checks…'}
-      </div>
-    );
-  }
-
-  if (!root) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <FolderOpen className="h-6 w-6 text-slate-600" />
-        <p className="max-w-xs text-xs leading-relaxed text-slate-400">
-          {ru
-            ? 'Папка проекта не подключена — проверять пока нечего. Подключите её на экране «Файлы проекта».'
-            : 'No project folder is connected, so there is nothing to check yet. Connect it on the Project Files screen.'}
-        </p>
-      </div>
-    );
-  }
+  // The strip draws its own header; this panel has none to add — only the studio's window controls,
+  // on a row that is not there when the panel is drawn outside the studio.
+  const body = loading ? (
+    <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-slate-400">
+      <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
+      {ru ? 'Смотрим, что можно проверить…' : 'Looking for checks…'}
+    </div>
+  ) : !root ? (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+      <FolderOpen className="h-6 w-6 text-slate-600" />
+      <p className="max-w-xs text-xs leading-relaxed text-slate-400">
+        {ru
+          ? 'Папка проекта не подключена — проверять пока нечего. Подключите её на экране «Файлы проекта».'
+          : 'No project folder is connected, so there is nothing to check yet. Connect it on the Project Files screen.'}
+      </p>
+    </div>
+  ) : (
+    <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <ProjectCheckStrip root={root} />
+    </div>
+  );
 
   return (
-    <div className="h-full overflow-y-auto p-2">
-      <ProjectCheckStrip root={root} />
+    <div className="flex h-full min-h-0 flex-col">
+      <PaneActionsRow />
+      {body}
     </div>
   );
 };

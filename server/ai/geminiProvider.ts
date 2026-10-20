@@ -112,14 +112,22 @@ export async function safeCallGemini(
    * Reports which model actually answered, and whether it ran out of room — the UI names the engine
    * from this, and the caller decides what to do with a cut-off answer.
    */
-  onModelUsed?: (model: string, truncated: boolean) => void
+  onModelUsed?: (model: string, truncated: boolean) => void,
+  /** The answer as it is written, when the caller is showing a live view of the request. */
+  onDelta?: (text: string) => void,
+  /** A new model is about to be tried, so a reader can drop the previous model's partial text. */
+  onModelStart?: (model: string) => void,
+  /** Aborted when the reader cancelled: stop asking the next model, and stop reading this one. */
+  signal?: AbortSignal
 ): Promise<any | null> {
   if (!ai) return null;
   // Current-generation model aliases, ordered from newest to lightest fallback.
   const modelsToTry = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
 
   for (const model of modelsToTry) {
+    if (signal?.aborted) return null;
     try {
+      onModelStart?.(model);
       const config: any = {
         responseMimeType: 'application/json',
         // Asked for explicitly: the default is the host's business, and a low default silently cuts
@@ -131,21 +139,60 @@ export async function safeCallGemini(
         config.responseSchema = responseSchema;
       }
 
-      const response = await ai.models.generateContent({
-        model,
-        contents: promptText,
-        config
-      });
-      const answer = geminiAnswer(response);
-      if (answer.text) {
-        if (answer.truncated) {
+      /*
+       * Two readings of the same answer. With a live view the model is asked for a stream and each
+       * chunk is reported as it arrives; without one the plain call is used, because collecting a
+       * stream nobody reads only adds a loop. A host whose streaming call fails falls back to the
+       * plain one for that model rather than losing it.
+       */
+      let answerText = '';
+      let answerTruncated = false;
+
+      if (onDelta && typeof ai.models.generateContentStream === 'function') {
+        try {
+          const stream = await ai.models.generateContentStream({
+            model,
+            contents: promptText,
+            config
+          });
+          for await (const chunk of stream) {
+            if (signal?.aborted) break;
+            const part = geminiAnswer(chunk);
+            if (part.text) {
+              answerText += part.text;
+              onDelta(part.text);
+            }
+            if (part.truncated) answerTruncated = true;
+          }
+        } catch (streamError: any) {
+          console.info(`[Gemini Engine] ${model} could not stream; asking once more without it.`);
+          answerText = '';
+          answerTruncated = false;
+          const response = await ai.models.generateContent({ model, contents: promptText, config });
+          const answer = geminiAnswer(response);
+          answerText = answer.text;
+          answerTruncated = answer.truncated;
+        }
+      } else {
+        const response = await ai.models.generateContent({
+          model,
+          contents: promptText,
+          config
+        });
+        const answer = geminiAnswer(response);
+        answerText = answer.text;
+        answerTruncated = answer.truncated;
+      }
+
+      if (answerText) {
+        if (answerTruncated) {
           console.info(
             `[Gemini Engine] ${model} hit its output limit; keeping the finished part of the answer.`
           );
         }
-        const parsed = resilientJsonParse(answer.text, { repair: answer.truncated });
+        const parsed = resilientJsonParse(answerText, { repair: answerTruncated });
         if (parsed && typeof parsed === 'object') {
-          onModelUsed?.(model, answer.truncated);
+          onModelUsed?.(model, answerTruncated);
           return parsed;
         }
       }

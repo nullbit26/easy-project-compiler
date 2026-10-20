@@ -2,7 +2,8 @@ import fs from 'fs';
 import { Type } from '../ai/geminiProvider';
 import { callAiJson, getEngineLabel } from '../ai/aiProvider';
 import { WorkspaceError, getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from '../store/workspaceStore';
-import { readWorkspaceTextFile, scanWorkspace } from './workspaceFiles';
+import { readWorkspaceTextFile } from './workspaceFiles';
+import { planTaskContext } from './contextPlan';
 
 /**
  * The one place where "the AI proposes real file content" happens. Both the normal
@@ -71,18 +72,9 @@ export interface ProposalOutcome {
   engine: string;
 }
 
-const MAX_CONTEXT_FILES = 8;
-const MAX_CONTEXT_CHARS = 60_000;
+const MAX_SEEDS = 24;
 const MAX_CHANGE_CHARS = 200_000;
 const MAX_CHANGES = 12;
-
-function readContext(relativePath: string): string {
-  try {
-    return readWorkspaceTextFile(relativePath, 12_000).content;
-  } catch {
-    return '';
-  }
-}
 
 export async function proposeFileChanges(request: ProposalRequest): Promise<ProposalOutcome | null> {
   const root = getWorkspaceRoot();
@@ -97,29 +89,12 @@ export async function proposeFileChanges(request: ProposalRequest): Promise<Prop
     ? request.acceptanceCriteria.filter((c: unknown) => typeof c === 'string').slice(0, 8)
     : [];
   const requestedFiles: string[] = Array.isArray(request.targetFiles)
-    ? request.targetFiles.filter((p: unknown) => typeof p === 'string').slice(0, MAX_CONTEXT_FILES)
+    ? request.targetFiles.filter((p: unknown) => typeof p === 'string').slice(0, MAX_SEEDS)
     : [];
 
-  let contextBudget = MAX_CONTEXT_CHARS;
-  const contextBlocks: string[] = [];
-  for (const requested of requestedFiles) {
-    if (contextBudget <= 0) break;
-    let relative: string;
-    try {
-      relative = toRelativePath(resolveWorkspacePath(requested));
-    } catch {
-      continue;
-    }
-    const content = readContext(relative).slice(0, Math.min(12_000, contextBudget));
-    if (!content) continue;
-    contextBudget -= content.length;
-    contextBlocks.push(`### FILE: ${relative}\n\`\`\`\n${content}\n\`\`\``);
-  }
-
-  const fileIndex = scanWorkspace()
-    .files.slice(0, 400)
-    .map((file) => file.path)
-    .join('\n');
+  // The files the task names, plus the imports, importers, tests and neighbours those bring in.
+  const plan = planTaskContext({ seeds: requestedFiles });
+  const fileIndex = plan.indexPath.join('\n');
 
   const brief = request.brief || {};
   const projectName = String(request.projectName || 'Project');
@@ -154,7 +129,7 @@ EXISTING FILES IN THE PROJECT FOLDER (use these exact relative paths, do not inv
 ${fileIndex || '(the folder is empty — create the files needed for the task)'}
 
 CURRENT CONTENT OF THE FILES THAT MATTER FOR THIS TASK:
-${contextBlocks.join('\n\n') || '(none of the selected files exist yet)'}
+${plan.blocks || '(none of the selected files exist yet)'}
 
 RULES:
 ${rules}`;

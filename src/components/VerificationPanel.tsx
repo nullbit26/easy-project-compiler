@@ -7,6 +7,7 @@ import {
   HardDrive,
   Loader2,
   PlayCircle,
+  Settings,
   Terminal,
   Wand2,
   XCircle
@@ -22,6 +23,7 @@ import type {
 } from '../services/api';
 import { budgetLine, buildWeightLine, formatBytes } from '../utils/byteSize';
 import { Button } from './ui/Button';
+import { HelpHint } from './ui/HelpHint';
 
 interface VerificationPanelProps {
   ru: boolean;
@@ -49,12 +51,21 @@ interface VerificationPanelProps {
   onOpenProblem: (problem: CheckProblem) => void;
 }
 
-/** What colour and icon one check's outcome gets. */
+/**
+ * What one check's outcome looks like.
+ *
+ * The badge is the same hairline chip in every state; only the word carries the colour. A filled
+ * emerald pill for "passed" next to a filled rose one for "failed" made a report look like a row
+ * of sweets, and the studio's own rows are quiet: one surface, one type size, colour only on the
+ * word that changed.
+ */
+const CHIP = 'rounded border border-slate-800/80 bg-slate-900/50';
+
 function statusStyle(status: CheckRunResult['status']): string {
-  if (status === 'passed') return 'text-emerald-300 bg-emerald-950/60 border-emerald-800/60';
-  if (status === 'failed') return 'text-rose-300 bg-rose-950/60 border-rose-800/60';
-  if (status === 'timeout') return 'text-amber-300 bg-amber-950/60 border-amber-800/60';
-  return 'text-slate-400 bg-slate-900 border-slate-700';
+  if (status === 'passed') return `text-emerald-300/90 ${CHIP}`;
+  if (status === 'failed') return `text-rose-300 ${CHIP}`;
+  if (status === 'timeout') return `text-amber-300 ${CHIP}`;
+  return `text-slate-400 ${CHIP}`;
 }
 
 function formatMs(ms: number): string {
@@ -177,6 +188,9 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
   const [onlyNew, setOnlyNew] = useState(false);
   const [budgetField, setBudgetField] = useState('');
   const [budgetTouched, setBudgetTouched] = useState(false);
+  /* The command and the ceiling are set once, while the project is made: they live behind one
+     quiet disclosure so the everyday screen is the checks themselves. */
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // The field follows the saved ceiling until the user starts typing in it.
   const savedBudgetBytes = budget?.bytes ?? null;
@@ -206,23 +220,24 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
     /* A section of the screen's one surface, not a card on it. */
     <div className="space-y-3 border-t border-slate-800/70 pt-5">
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-            {ru ? 'Цикл проверки' : 'Verification loop'}
-          </span>
+        <div className="min-w-0">
           <h4 className="text-sm font-bold text-white flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-emerald-400" />
+            <Terminal className="w-4 h-4 text-slate-500 shrink-0" />
             <span>{ru ? 'Проверка проекта' : 'Project checks'}</span>
+            <HelpHint
+              text={
+                ru
+                  ? 'Приложение запускает команды вашего проекта в подключённой папке — без установки пакетов и без выхода в интернет. Ошибки показываются с файлом и строкой.'
+                  : 'The app runs your project’s own commands inside the connected folder — no installs, no network. Failures are shown with the file and line.'
+              }
+            />
           </h4>
         </div>
         {verification && (
-          <span
-            className={`text-[10px] font-bold px-2 py-1 rounded-lg border shrink-0 ${
-              verification.ok
-                ? 'text-emerald-300 bg-emerald-950/60 border-emerald-800/60'
-                : 'text-rose-300 bg-rose-950/60 border-rose-800/60'
-            }`}
-          >
+          <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-slate-400">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${verification.ok ? 'bg-emerald-400' : 'bg-rose-400'}`}
+            />
             {verification.ok
               ? ru
                 ? 'всё проходит'
@@ -238,25 +253,19 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
         )}
       </div>
 
-      <p className="text-[11px] text-slate-400">
-        {ru
-          ? 'Приложение запускает команды вашего проекта в подключённой папке — без установки пакетов и без выхода в интернет. Ошибки показываются с файлом и строкой.'
-          : 'The app runs your project’s own commands inside the connected folder — no installs, no network. Failures are shown with the file and line.'}
-      </p>
-
       {checksLoading ? (
         <div className="text-[11px] text-slate-400 flex items-center gap-2">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
           <span>{ru ? 'Ищу проверки в папке…' : 'Looking for checks in the folder…'}</span>
         </div>
       ) : checks.length > 0 ? (
-        <div className="space-y-1.5">
+        <div className="divide-y divide-slate-800/60">
           {checks.map((check) => {
             const isOn = selected.includes(check.id);
             return (
               <label
                 key={check.id}
-                className="flex items-center gap-2 bg-slate-950/60 border border-slate-800 rounded-lg px-2.5 py-2 cursor-pointer"
+                className="flex cursor-pointer items-center gap-2 py-1.5"
               >
                 <input
                   type="checkbox"
@@ -266,34 +275,26 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
                       prev.includes(check.id) ? prev.filter((id) => id !== check.id) : [...prev, check.id]
                     )
                   }
-                  className="accent-emerald-500 cursor-pointer shrink-0"
+                  className="accent-indigo-500 cursor-pointer shrink-0"
                 />
-                <span className="text-[11px] text-slate-200 font-bold shrink-0">
+                <span className="text-[11px] text-slate-200 shrink-0">
                   {ru ? check.labelRu : check.labelEn}
                 </span>
-                <code className="text-[10px] text-slate-400 font-mono truncate">{check.commandLine}</code>
+                <code className="text-[10px] text-slate-500 font-mono truncate">{check.commandLine}</code>
               </label>
             );
           })}
         </div>
       ) : (
-        <div className="bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-2 text-[11px] text-amber-200 flex items-start gap-2">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2 text-[11px] text-slate-400">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400/80" />
           <span>
             {ru
-              ? 'Готовых проверок не нашлось (в папке нет package.json/тестов/сборки). Впишите свою команду — например «node scripts/check.js» или «pytest -q».'
-              : 'No ready-made checks were found (no package.json, tests or build). Type your own command — e.g. "node scripts/check.js" or "pytest -q".'}
+              ? 'Готовых проверок не нашлось — свою команду задайте в настройках сборки.'
+              : 'No ready-made checks were found — set your own command in the build settings.'}
           </span>
         </div>
       )}
-
-      <input
-        value={customCommand}
-        onChange={(e) => setCustomCommand(e.target.value)}
-        aria-label={ru ? 'Своя команда проверки' : 'Custom check command'}
-        placeholder={ru ? 'Своя команда (не обязательно): node scripts/check.js' : 'Custom command (optional): node scripts/check.js'}
-        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-[11px] font-mono text-slate-200 focus:border-emerald-600"
-      />
 
       <div className="flex items-center justify-between gap-2">
         <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer">
@@ -301,12 +302,12 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
             type="checkbox"
             checked={autoVerify}
             onChange={(e) => onToggleAutoVerify(e.target.checked)}
-            className="accent-emerald-500 cursor-pointer"
+            className="accent-indigo-500 cursor-pointer"
           />
           <span>{ru ? 'Проверять сразу после записи' : 'Verify right after writing'}</span>
         </label>
         <Button
-          variant="success"
+          variant="primary"
           size="sm"
           icon={isVerifying ? Loader2 : PlayCircle}
           className="shrink-0"
@@ -318,71 +319,32 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
       </div>
 
       {/*
-        * The budget: the same measurement, but in front of a ceiling. A size nobody judges is a
-        * report; a size in front of a limit is a check — one that can be handed back to the model
-        * the same way a failed test is. It is drawn whether or not a run has happened yet: a
-        * ceiling is worth writing down before the first build, not only after one.
-        */}
-      <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 space-y-2">
+        The ceiling is state, not a setting: when the project has one, what the last build made
+        of it stays in the open. Only the field that writes the ceiling sits in the settings
+        below, because that is the part touched once.
+      */}
+      {budget?.bytes != null && (
         <div
-          className={`text-[10px] flex items-start gap-2 ${
-            budget?.verdict?.over ? 'text-amber-200' : 'text-slate-300'
+          className={`flex items-start gap-2 text-[10px] ${
+            budget?.verdict?.over ? 'text-amber-200' : 'text-slate-400'
           }`}
         >
           <HardDrive className="w-3 h-3 shrink-0 mt-0.5" />
           <span>
-            {budgetLine(budget?.verdict, ru) ||
-              (budget?.bytes == null
-                ? ru
-                  ? 'Бюджет веса не задан: размер сборки ни с чем не сравнивается.'
-                  : 'No weight budget is set: the build size is compared with nothing.'
-                : ru
-                ? `Бюджет ${formatBytes(budget.bytes)}: в этой папке сборку ещё не измеряли — проверю после первой сборки.`
-                : `Budget ${formatBytes(budget.bytes)}: no build has been measured in this folder yet — it will be judged after the first one.`)}
+            {budgetLine(budget.verdict, ru) ||
+              (ru
+                ? `Бюджет ${formatBytes(budget.bytes)}: сборку ещё не измеряли — проверю после первой сборки.`
+                : `Budget ${formatBytes(budget.bytes)}: no build has been measured yet — it will be judged after the first one.`)}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <input
-            value={budgetField}
-            onChange={(event) => {
-              setBudgetTouched(true);
-              setBudgetField(event.target.value);
-            }}
-            aria-label={ru ? 'Бюджет веса' : 'Weight budget'}
-            placeholder={ru ? 'например 500 KB' : 'for example 500 KB'}
-            className="flex-1 min-w-0 bg-slate-900 border border-slate-800 focus:border-emerald-600 rounded-lg px-2.5 py-1.5 text-[11px] font-mono text-slate-200"
-          />
-          <button
-            onClick={() => {
-              setBudgetTouched(false);
-              onSaveBudget(budgetField);
-            }}
-            disabled={budgetSaving}
-            className="h-7 shrink-0 rounded-lg px-2.5 text-[11px] font-medium text-slate-200 ring-1 ring-inset ring-slate-700 transition-colors enabled:hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-50"
-          >
-            {budgetSaving && <Loader2 className="w-3 h-3 animate-spin" />}
-            <span>{ru ? 'Задать бюджет' : 'Set the budget'}</span>
-          </button>
-        </div>
-        <p className="text-[10px] text-slate-400">
-          {ru
-            ? 'Предел для папки сборки: проверяется после собственной сборки проекта. Если результат тяжелее, приложение предлагает уменьшить его так же, как предлагает исправить упавший тест. Пустое поле убирает бюджет.'
-            : 'A ceiling for the build output folder, judged after the project’s own build. If the result is heavier, the app offers to shrink it the same way it offers to fix a failed test. An empty field removes the budget.'}
-        </p>
-        {budget?.verdict?.over && (
-          <button
-            onClick={onFix}
-            disabled={isFixing}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-xs font-medium text-white transition-colors enabled:hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-50"
-          >
-            {isFixing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-            <span>
-              {ru ? 'ИИ: вернуть сборку в бюджет' : 'AI: bring the build back under its budget'}
-            </span>
-          </button>
-        )}
-        {budgetHint && <div className="text-[10px] text-indigo-300">{budgetHint}</div>}
-      </div>
+      )}
+
+      {budget?.verdict?.over && (
+        <Button variant="primary" size="sm" icon={isFixing ? Loader2 : Wand2} className="w-full" onClick={onFix} disabled={isFixing}>
+          {ru ? 'ИИ: вернуть сборку в бюджет' : 'AI: bring the build under budget'}
+        </Button>
+      )}
+      {budgetHint && <div className="text-[10px] text-indigo-300">{budgetHint}</div>}
 
       {verification && (
         <div className="space-y-2 pt-2 border-t border-slate-800">
@@ -395,30 +357,14 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
           </div>
 
           {verdict && (
-            <div
-              className={`rounded-xl border px-3 py-2.5 space-y-1 ${
-                verdict.tone === 'bad'
-                  ? 'bg-rose-950/50 border-rose-800/60'
-                  : verdict.tone === 'good'
-                  ? 'bg-emerald-950/40 border-emerald-800/50'
-                  : 'bg-slate-950 border-slate-800'
-              }`}
-            >
-              <div
-                className={`text-[11px] font-bold flex items-center gap-2 ${
-                  verdict.tone === 'bad'
-                    ? 'text-rose-200'
-                    : verdict.tone === 'good'
-                    ? 'text-emerald-200'
-                    : 'text-slate-300'
-                }`}
-              >
+            <div className="space-y-1 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2.5">
+              <div className="flex items-center gap-2 text-[11px] font-medium text-slate-200">
                 {verdict.tone === 'bad' ? (
-                  <XCircle className="w-3.5 h-3.5 shrink-0" />
+                  <XCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
                 ) : verdict.tone === 'good' ? (
-                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
                 ) : (
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
                 )}
                 <span>{verdict.title}</span>
               </div>
@@ -436,14 +382,8 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
           )}
 
           {buildWeightLine(verification.build, ru) && (
-            <div
-              className={`rounded-lg border px-3 py-2 text-[10px] flex items-center gap-2 ${
-                verification.build?.heavy
-                  ? 'bg-amber-950/50 border-amber-800/60 text-amber-200'
-                  : 'bg-slate-950 border-slate-800 text-slate-300'
-              }`}
-            >
-              <HardDrive className="w-3 h-3 shrink-0" />
+            <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-[10px] text-slate-400">
+              <HardDrive className={`w-3 h-3 shrink-0 ${verification.build?.heavy ? 'text-amber-400' : ''}`} />
               <span>{buildWeightLine(verification.build, ru)}</span>
             </div>
           )}
@@ -560,36 +500,36 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
           )}
 
           {failing.length > 0 ? (
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              icon={isFixing ? Loader2 : Wand2}
+              className="w-full"
               onClick={onFix}
               disabled={isFixing}
-              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-xs font-medium text-white transition-colors enabled:hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-50"
             >
-              {isFixing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-              <span>
-                {isFixing
-                  ? ru
-                    ? 'Модель готовит исправление…'
-                    : 'The model is preparing a fix…'
-                  : verdict?.tone === 'bad'
-                  ? ru
-                    ? 'ИИ: исправить то, что сломала эта правка'
-                    : 'AI: fix what this change broke'
-                  : ru
-                  ? 'ИИ: исправить ошибки проверки'
-                  : 'AI: fix the failing checks'}
-              </span>
-            </button>
+              {isFixing
+                ? ru
+                  ? 'Модель готовит исправление…'
+                  : 'The model is preparing a fix…'
+                : verdict?.tone === 'bad'
+                ? ru
+                  ? 'ИИ: исправить то, что сломала эта правка'
+                  : 'AI: fix what this change broke'
+                : ru
+                ? 'ИИ: исправить ошибки проверки'
+                : 'AI: fix the failing checks'}
+            </Button>
           ) : verification.results.length === 0 ? (
             // Nothing ran, so there is nothing to congratulate: an empty run is not a green run.
-            <div className="text-[11px] text-amber-200 flex items-center gap-2">
-              <AlertTriangle className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400/80" />
               <span>{ru ? 'Ни одна проверка не запустилась.' : 'No check ran.'}</span>
             </div>
           ) : (
             <div className="space-y-2">
-              <div className="text-[11px] text-emerald-300 flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5" />
+              <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400/90" />
                 <span>{ru ? 'Все проверки прошли.' : 'Every check passed.'}</span>
               </div>
               {/*
@@ -598,22 +538,15 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
                 * pass" into "the checks pass and the mess you just made is gone".
                 */}
               {newProblems.length > 0 && (
-                <button
-                  onClick={onFix}
-                  disabled={isFixing}
-                  className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-xs font-medium text-white transition-colors enabled:hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-50"
-                >
-                  {isFixing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                  <span>
-                    {isFixing
-                      ? ru
-                        ? 'Модель готовит исправление…'
-                        : 'The model is preparing a fix…'
-                      : ru
-                      ? `ИИ: убрать замечания, которые добавила эта правка (${newProblems.length})`
-                      : `AI: clear the findings this change added (${newProblems.length})`}
-                  </span>
-                </button>
+                <Button variant="primary" size="sm" icon={isFixing ? Loader2 : Wand2} className="w-full" onClick={onFix} disabled={isFixing}>
+                  {isFixing
+                    ? ru
+                      ? 'Модель готовит исправление…'
+                      : 'The model is preparing a fix…'
+                    : ru
+                    ? `ИИ: убрать замечания, которые добавила эта правка (${newProblems.length})`
+                    : `AI: clear the findings this change added (${newProblems.length})`}
+                </Button>
               )}
             </div>
           )}
@@ -621,6 +554,73 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
           {fixHint && <div className="text-[10px] text-indigo-300">{fixHint}</div>}
         </div>
       )}
+
+      {/*
+        Settings that are written once: a command the folder does not already declare, and the
+        ceiling for the build output. They used to sit in the middle of the working screen with a
+        paragraph under them, competing with the checks for attention.
+      */}
+      <div className="border-t border-slate-800/70 pt-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSettingsOpen((value) => !value)}
+            aria-expanded={settingsOpen}
+            data-build-settings-toggle
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-[11px] text-slate-400 transition-colors hover:text-slate-200"
+          >
+            <Settings className="h-3.5 w-3.5 shrink-0" />
+            <span>{ru ? 'Настройки сборки' : 'Build settings'}</span>
+            <ChevronDown
+              className={`ml-auto h-3.5 w-3.5 shrink-0 transition-transform ${settingsOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          <HelpHint
+            text={
+              ru
+                ? 'Бюджет веса — предел для папки сборки: после собственной сборки проекта приложение сравнит её размер с этим числом. Своя команда добавляет проверку, которой нет в папке. Пустое поле бюджета убирает предел.'
+                : 'The weight budget is a ceiling for the build folder: after the project’s own build the app compares its size with that number. A custom command adds a check the folder does not declare. An empty budget field removes the ceiling.'
+            }
+          />
+        </div>
+
+        {settingsOpen && (
+          <div className="mt-2 space-y-2">
+            <input
+              value={customCommand}
+              onChange={(event) => setCustomCommand(event.target.value)}
+              aria-label={ru ? 'Своя команда проверки' : 'Custom check command'}
+              placeholder={ru ? 'Своя команда: node scripts/check.js' : 'Custom command: node scripts/check.js'}
+              className="h-7 w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 font-mono text-[11px] text-slate-200 focus:border-indigo-600"
+            />
+            <div className="flex items-center gap-2">
+              <input
+                value={budgetField}
+                onChange={(event) => {
+                  setBudgetTouched(true);
+                  setBudgetField(event.target.value);
+                }}
+                aria-label={ru ? 'Бюджет веса' : 'Weight budget'}
+                placeholder={ru ? 'Бюджет: например 500 KB' : 'Budget: e.g. 500 KB'}
+                className="h-7 min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-950 px-2.5 font-mono text-[11px] text-slate-200 focus:border-indigo-600"
+              />
+              <Button
+                variant="secondary"
+                size="xs"
+                className="shrink-0"
+                onClick={() => {
+                  setBudgetTouched(false);
+                  onSaveBudget(budgetField);
+                }}
+                disabled={budgetSaving}
+                icon={budgetSaving ? Loader2 : undefined}
+              >
+                {ru ? 'Задать бюджет' : 'Set the budget'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

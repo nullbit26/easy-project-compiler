@@ -2,13 +2,69 @@ import { ProjectBrief, ArchitectureProposal, ProjectPhase, ProjectMap, CompiledP
 import type { RulesContent } from '../utils/rulesFiles';
 import type { CheckEvidence } from '../utils/checkEvidence';
 import { trackAiRequest } from './aiActivity';
+import { whenFolderReady } from './folderGate';
+import { notifyFolderChanged } from './folderFeed';
 import { notifyWorkspaceBatchWritten } from './rulesWatch';
+import { serverUnreachableMessage } from '../utils/serverUnreachable';
+import { storedLanguage } from '../utils/uiLanguage';
+import { takeSseFrames } from '../utils/sse';
+
+/**
+ * Why a request failed, when the status alone does not say it.
+ *
+ * `not_json` means the answer was not an API envelope at all — the app's own HTML comes back
+ * instead, which is what a page served by a bare Vite or static server does for every `/api/*`.
+ * The API layer already puts the honest sentence on `userMessage`, so every screen that prints it
+ * says the same true thing; the reason stays for the screens that can add something specific about
+ * their own work, as the sandbox does.
+ */
+export type ApiErrorReason = 'not_json';
 
 export class ApiError extends Error {
-  constructor(public status: number, public userMessage: string, public details?: any) {
+  constructor(
+    public status: number,
+    public userMessage: string,
+    public details?: any,
+    public reason?: ApiErrorReason
+  ) {
     super(userMessage);
     this.name = 'ApiError';
   }
+}
+
+/**
+ * The one error for "this answer is not an API envelope".
+ *
+ * It is used on both paths, because a page served without the app's server answers in two ways: a
+ * POST falls through to a 404 with an empty body, while a GET is served the app's own HTML with a
+ * 200 — a single-page fallback that looks like success until it is parsed. Either way the request
+ * never reached an API route, and the sentence is the same.
+ */
+/**
+ * The folder requests that must wait for a restore in flight, and the ones that must not.
+ *
+ * Everything the server answers *from the connected folder* — its file list, a file, Git, the
+ * checks, the weight budget, the preview — is only right once the start-up reconnect (or a project
+ * switch) has landed, so those wait. Choosing a folder cannot wait for one (it is how a folder gets
+ * chosen), and neither can unbinding it.
+ *
+ * The Auto run is deliberately absent: it asks whether the folder is the one its project claims and
+ * refuses when it is not, so it must see the server as it really is rather than a settled version.
+ */
+const FOLDER_FREE = [
+  '/api/files/bind',
+  '/api/files/unbind',
+  '/api/files/browse',
+  '/api/files/pick-folder'
+];
+
+function needsConnectedFolder(url: string): boolean {
+  if (!url.startsWith('/api/files/') && !url.startsWith('/api/preview/')) return false;
+  return !FOLDER_FREE.some((prefix) => url.startsWith(prefix));
+}
+
+function notAnApiAnswer(res: Response): ApiError {
+  return new ApiError(res.status, serverUnreachableMessage(storedLanguage()), undefined, 'not_json');
 }
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -17,7 +73,13 @@ async function handleResponse<T>(res: Response): Promise<T> {
     try {
       errorData = await res.json();
     } catch (e) {
-      throw new ApiError(res.status, `Server error: ${res.statusText}`);
+      /*
+       * The answer was not an API envelope at all, so this is not a failure of the request but of
+       * the address: the page is served by something that has no `/api` behind it. Every screen
+       * prints `userMessage`, so the sentence is written once, here, in the window's language —
+       * files, Git, checks and the sandbox then all say the same true thing.
+       */
+      throw notAnApiAnswer(res);
     }
     throw new ApiError(
       res.status,
@@ -25,7 +87,16 @@ async function handleResponse<T>(res: Response): Promise<T> {
       errorData.details || errorData
     );
   }
-  const json = await res.json();
+  /*
+   * A 200 is not a promise of JSON. The single-page fallback of a bare Vite or static server hands
+   * back the app's own HTML with a 200, so the parse is where a missing server is caught on GETs.
+   */
+  let json: any;
+  try {
+    json = await res.json();
+  } catch {
+    throw notAnApiAnswer(res);
+  }
   /*
    * Which engine answered rides on the envelope, next to `data`, because it describes the request,
    * not the result. It used to be dropped here, so a prompt or a verdict written by the offline rule
@@ -171,6 +242,7 @@ export async function describeImplementedApi(params: {
   language?: string;
 }) {
   return trackAiRequest('map', async () => {
+    await whenFolderReady();
     const res = await fetch('/api/project/describe-implemented', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -186,6 +258,7 @@ export async function describeImplementedApi(params: {
  */
 export async function importWorkspaceApi(params: { paths?: string[]; projectName?: string; language?: string }) {
   return trackAiRequest('project', async () => {
+    await whenFolderReady();
     const res = await fetch('/api/project/import-workspace', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -244,7 +317,7 @@ export async function adaptProjectPlanApi(params: {
   });
 }
 
-export async function compilePromptApi(params: {
+export interface CompilePromptParams {
   userRequest: string;
   taskTitle?: string;
   projectMap: ProjectMap;
@@ -261,7 +334,9 @@ export async function compilePromptApi(params: {
    */
   rules?: RulesContent;
   projectName?: string;
-}) {
+}
+
+export async function compilePromptApi(params: CompilePromptParams) {
   return trackAiRequest('compile', async () => {
     const res = await fetch('/api/prompt/compile', {
       method: 'POST',
@@ -269,6 +344,100 @@ export async function compilePromptApi(params: {
       body: JSON.stringify(params)
     });
     return handleResponse<CompiledPrompt>(res);
+  });
+}
+
+/**
+ * What a screen watching the compile sees while it happens.
+ *
+ * `onAttempt` is a new provider/model being tried (the previous model's partial text is not the
+ * answer any more); `onDelta` is a piece of that model's own text, exactly as it was written.
+ */
+export interface CompileStreamHandlers {
+  onAttempt?: (provider: string, model: string | null) => void;
+  onDelta?: (text: string) => void;
+  /**
+   * Aborted when the reader cancels the run. The request and the stream are both stopped: the
+   * provider's answer has nobody waiting for it any more.
+   */
+  signal?: AbortSignal;
+}
+
+/**
+ * The same compile, with the model's text read off the wire as it is written.
+ *
+ * The route is the same one `compilePromptApi` calls; the query only asks for a second channel
+ * beside the JSON answer. A server that does not know about it, a proxy that buffers the response,
+ * or a host that ignores the request for a stream all answer with a plain envelope — so the
+ * content type decides, and anything that is not a stream is handed to the ordinary reader. That
+ * is why this can be the default call of a screen without making the old path a fallback nobody
+ * tests.
+ */
+export async function compilePromptStreamApi(
+  params: CompilePromptParams,
+  handlers: CompileStreamHandlers = {}
+) {
+  return trackAiRequest('compile', async () => {
+    const res = await fetch('/api/prompt/compile?stream=1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify(params),
+      signal: handlers.signal
+    });
+
+    const contentType = res.headers?.get?.('content-type') || '';
+    const body: any = (res as any).body;
+    if (!res.ok || !contentType.includes('text/event-stream') || !body?.getReader) {
+      return handleResponse<CompiledPrompt>(res);
+    }
+
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: { success: true; data: any; engine?: string } | null = null;
+    let failure: string | null = null;
+
+    const readFrames = () => {
+      const parsed = takeSseFrames(buffer);
+      buffer = parsed.rest;
+      for (const frame of parsed.frames) {
+        let payload: any;
+        try {
+          payload = JSON.parse(frame.data);
+        } catch {
+          continue;
+        }
+        if (payload?.type === 'attempt') {
+          handlers.onAttempt?.(String(payload.provider || ''), payload.model ? String(payload.model) : null);
+        } else if (payload?.type === 'delta') {
+          if (typeof payload.text === 'string' && payload.text) handlers.onDelta?.(payload.text);
+        } else if (payload?.type === 'result' && payload.success) {
+          result = payload;
+        } else if (payload?.type === 'error') {
+          failure = String(payload.error || 'An unexpected API error occurred.');
+        }
+      }
+    };
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      readFrames();
+    }
+    buffer += decoder.decode();
+    // A stream is not obliged to end its last frame with an empty line; that frame is still real.
+    buffer += '\n\n';
+    readFrames();
+
+    if (result) {
+      const finished: { success: true; data: any; engine?: string } = result;
+      if (finished.engine && finished.data && typeof finished.data === 'object') {
+        return { ...finished.data, engine: finished.engine } as CompiledPrompt;
+      }
+      return finished.data as CompiledPrompt;
+    }
+    throw new ApiError(500, failure || 'An unexpected API error occurred.');
   });
 }
 
@@ -289,12 +458,13 @@ export async function reviewSessionApi(params: {
   /** The project's working mode: it shapes the wording of the verdict, not its strictness. */
   skillLevel?: string;
   language?: string;
-}) {
+}, options: { signal?: AbortSignal } = {}) {
   return trackAiRequest('review', async () => {
     const res = await fetch('/api/session/review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params)
+      body: JSON.stringify(params),
+      signal: options.signal
     });
     return handleResponse<SessionReview>(res);
   });
@@ -696,7 +866,15 @@ export interface PreviewBuild {
   mode?: 'origin' | 'inline';
 }
 
-async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
+async function jsonRequest<T>(
+  url: string,
+  init?: RequestInit,
+  options: { waitForFolder?: boolean } = {}
+): Promise<T> {
+  // A screen mounted in the same commit as the project provider asks for the folder before the
+  // provider's own effect has started reconnecting it; waiting here is what keeps the first answer
+  // from being "no folder" when the project already records one.
+  if (options.waitForFolder !== false && needsConnectedFolder(url)) await whenFolderReady();
   const res = await fetch(url, init);
   return handleResponse<T>(res);
 }
@@ -709,24 +887,52 @@ export async function buildPreviewApi(params: { entry?: string | null; language?
   });
 }
 
+/**
+ * The folder as the server holds it, without waiting on the gate.
+ *
+ * This is what the module performing the reconnect reads (`services/projectFolder`), so the repair
+ * can never end up waiting on itself.
+ */
+export async function readWorkspaceApi(language?: string) {
+  return jsonRequest<WorkspaceState>(`/api/files/workspace?language=${language || 'ru'}`, undefined, {
+    waitForFolder: false
+  });
+}
+
+/** The folder as every screen sees it: settled, so the first read is the right one. */
 export async function fetchWorkspaceApi(language?: string) {
   return jsonRequest<WorkspaceState>(`/api/files/workspace?language=${language || 'ru'}`);
 }
 
+/**
+ * Connects the server to a folder, and tells every open window about it.
+ *
+ * The announcement sits here rather than in the screen that pressed the button because every way
+ * into a folder change comes through this call: the Files screen, the guided flow, a project being
+ * opened, a folder being restored at start-up. A window that listens (`services/folderFeed`) then
+ * re-reads the new folder instead of showing the previous one until it is reopened.
+ */
 export async function bindWorkspaceApi(params: { path: string; language?: string }) {
-  return jsonRequest<WorkspaceState>(`/api/files/bind?language=${params.language || 'ru'}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: params.path, language: params.language })
-  });
+  const state = await jsonRequest<WorkspaceState>(
+    `/api/files/bind?language=${params.language || 'ru'}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: params.path, language: params.language })
+    }
+  );
+  notifyFolderChanged('bound', state?.root || params.path);
+  return state;
 }
 
 export async function unbindWorkspaceApi() {
-  return jsonRequest<WorkspaceState>('/api/files/unbind', {
+  const state = await jsonRequest<WorkspaceState>('/api/files/unbind', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({})
   });
+  notifyFolderChanged('unbound', state?.root || null);
+  return state;
 }
 
 export interface FolderPickResponse {
@@ -787,6 +993,7 @@ export async function generateFileChangesApi(params: {
   brief?: ProjectBrief;
 }) {
   return trackAiRequest('edit', async () => {
+    await whenFolderReady();
     const res = await fetch('/api/files/generate-changes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1179,6 +1386,7 @@ export async function fixChecksApi(params: {
   brief?: ProjectBrief;
 }) {
   return trackAiRequest('edit', async () => {
+    await whenFolderReady();
     const res = await fetch('/api/files/fix-checks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

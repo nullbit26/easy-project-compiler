@@ -38,6 +38,7 @@ import { Toast } from './components/Toast';
 import { AiActivityIndicator } from './components/AiActivityIndicator';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RulesWatchdog } from './components/RulesWatchdog';
+import { probeServer } from './services/serverPresence';
 
 /** Screens that can be kept alive. Unknown paths fall back to the dashboard. */
 const TAB_PATHS = ['/', '/simple', '/compiler', '/review', '/preview', '/coach', '/plan', '/studio', '/map', '/files', '/brief'] as const;
@@ -95,6 +96,7 @@ function AppContent() {
     onAddProject,
     onUpdateProjectFiles,
     onSyncProjectFiles,
+    onSetProjectFolder,
     onApplyFileInsights,
     onUpdateRulesContent,
     onRecordRulesCheck,
@@ -177,6 +179,26 @@ function AppContent() {
     if (!activePath) return;
     setVisitedPaths((prev) => (prev.includes(activePath) ? prev : [...prev, activePath]));
   }, [activePath]);
+
+  /**
+   * Whether this page has the app's own server behind it.
+   *
+   * The page can be opened from a bare Vite or static server while the interface is being looked at;
+   * there every `/api/*` is answered with the app's own HTML, so nothing on the file, Git, check or
+   * preview screens can work. One question at start, asked of the one address that answers in data,
+   * is enough for the title bar to say so before a screen has failed on its own.
+   */
+  const [serverMissing, setServerMissing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void probeServer().then((presence) => {
+      if (!cancelled) setServerMissing(presence === 'missing');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /** The screen each sidebar entry names. */
   const TAB_TO_PATH: Record<string, TabPath> = {
@@ -263,7 +285,13 @@ function AppContent() {
     navigate(isGuidedInterface(newProject) ? '/simple' : '/');
   };
 
-  const renderTab = (path: TabPath) => {
+  /**
+   * `active` is whether this screen is the one in front. The studio is kept mounted while the user
+   * works elsewhere (see `visitedPaths`), and its window tools are mounted into the title bar — so
+   * only the studio in front may put them there; a hidden one would keep a toolbar for a screen the
+   * user is not looking at.
+   */
+  const renderTab = (path: TabPath, active = true) => {
     switch (path) {
       case '/':
         return (
@@ -435,6 +463,7 @@ function AppContent() {
       case '/studio':
         return (
           <StudioScreen
+            active={active}
             project={currentProject}
             onUpdateTaskStatus={onUpdateTaskStatus}
             onUpdateTaskPositions={onUpdateTaskPositions}
@@ -483,6 +512,7 @@ function AppContent() {
           <ProjectWorkspace
             project={currentProject}
             onSyncProjectFiles={onSyncProjectFiles}
+            onProjectFolderBound={onSetProjectFolder}
             onOpenNewProjectModal={() => setShowSetupModal(true)}
           />
         );
@@ -604,7 +634,16 @@ function AppContent() {
         isOpenMobile={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         showAllPanels={showAllPanels}
-        onToggleAllPanels={() => setShowAllPanels((prev) => !prev)}
+        onToggleAllPanels={() => {
+          // Revealing every section is the door out of the guided interface: it is the only place
+          // that lists what there is to open, so the switch lives there. Making it stick (the
+          // project's interface becomes `full`) is what the old "Полный экран" button in the top
+          // bar did — that button, and the empty strip it needed, are gone; the door is where the
+          // sections are.
+          const revealing = !showAllPanels;
+          setShowAllPanels(revealing);
+          if (revealing) onSelectInterfaceMode?.('full');
+        }}
         collapsed={sidebarFolded}
         onToggleCollapsed={() => setSidebarFolded((prev) => !prev)}
       />
@@ -622,6 +661,7 @@ function AppContent() {
           currentProject && activePath && activePath !== '/studio' ? openPane : undefined
         }
         openScreenBesideDisabled={workspace.panes.length >= MAX_EXTRA_PANES}
+        serverMissing={serverMissing}
       />
 
       <div className="flex flex-1 min-h-0 w-full" inert={modalOpen || undefined}>
@@ -630,24 +670,19 @@ function AppContent() {
         {/* Toast Notification */}
         <Toast message={toastMessage} onClose={clearToast} />
 
-        {/* "AI is working" status — visible from every screen while a request is in flight */}
-        <AiActivityIndicator />
+        {/*
+          "AI is working" status — visible from every screen while a request is in flight, except
+          the two screens that open a terminal for the request itself: there a second card counting
+          the same seconds in the corner is noise on top of the log. Leaving either screen brings
+          the card back, so a request started here is still accounted for elsewhere.
+        */}
+        <AiActivityIndicator hidden={activePath === '/simple' || activePath === '/compiler'} />
 
         {/* The rules check that runs by itself after every batch written into the folder. */}
         <RulesWatchdog />
 
-        {/* Navbar Header */}
-        <Navbar
-          currentProject={currentProject}
-          onSelectAgent={onSelectAgent}
-          onSelectInterfaceMode={onSelectInterfaceMode}
-          onSelectAutonomy={onSelectAutonomy}
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          onOpenSavedProjectsDrawer={() => setIsSavedDrawerOpen(true)}
-          onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-          simpleMode={simpleMode}
-        />
+        {/* The narrow window's menu button — nothing at all on a desktop window. */}
+        <Navbar onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)} />
 
         {/* Main Tab View Canvas — the only part of the window that scrolls. */}
         <div className="flex flex-1 min-h-0 min-w-0" ref={rowRef}>
@@ -658,7 +693,15 @@ function AppContent() {
         <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden w-full">
           <div
             className={
-              fullBleedScreen
+              activePath === '/studio'
+                ? /*
+                    The studio is the window, not a panel in it: a padding around the split drew a
+                    frame above the plan's own toolbar, and its rounded corner made the whole
+                    workspace look like a card inside the app. `@container` and a definite height
+                    stay, so a pane reads its own width and keeps filling the box exactly.
+                  */
+                  '@container flex h-full w-full flex-col'
+                : fullBleedScreen
                 ? /*
                     `h-full`, not `min-h-full`: a pane reads its height from this box, and a box that
                     only has a minimum leaves the pane to size itself from its content — which is
@@ -684,7 +727,7 @@ function AppContent() {
                   className={screenClass(path)}
                   aria-hidden={path !== activePath}
                 >
-                  {renderTab(path)}
+                  {renderTab(path, path === activePath)}
                 </div>
               ))}
               {!activePath && <Navigate to="/" replace />}

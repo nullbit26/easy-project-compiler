@@ -1,14 +1,13 @@
 import { Type } from '../ai/geminiProvider';
 import { callAiJson, getEngineLabel, hasAiProvider } from '../ai/aiProvider';
-import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath, WorkspaceError } from '../store/workspaceStore';
+import { getWorkspaceRoot, WorkspaceError } from '../store/workspaceStore';
 import {
   applyFileChanges,
   attachFormatting,
   attachVerification,
-  readWorkspaceTextFile,
-  scanWorkspace,
   undoFileChanges
 } from './workspaceFiles';
+import { planTaskContext } from './contextPlan';
 import { formatWorkspaceFiles, summarizeFormatting } from './codeFormatter';
 import { runVerification, summarizeReport } from './projectChecks';
 import { autonomousLog } from './autonomousEvents';
@@ -33,8 +32,6 @@ import { autonomousLog } from './autonomousEvents';
 
 const AUTONOMOUS_MAX_ATTEMPTS = 4;
 const MAX_CHANGES = 12;
-const MAX_CONTEXT_FILES = 8;
-const MAX_CONTEXT_CHARS = 60_000;
 const FAILING_OUTPUT_CHARS = 4_000;
 
 const proposeSchema = {
@@ -99,36 +96,34 @@ function stackLabel(task: AutonomousTaskInput): string {
   return [task.projectType, task.engineOrFramework, task.language].filter(Boolean).join(' / ');
 }
 
-function contextFor(requested: string[]): string {
-  let budget = MAX_CONTEXT_CHARS;
-  const blocks: string[] = [];
-  for (const requestedPath of requested.slice(0, MAX_CONTEXT_FILES)) {
-    if (budget <= 0) break;
-    let relative: string;
-    try {
-      relative = toRelativePath(resolveWorkspacePath(requestedPath));
-    } catch {
-      continue;
-    }
-    let content = '';
-    try {
-      content = readWorkspaceTextFile(relative, 12_000).content;
-    } catch {
-      /* a file the task names may not exist yet — the proposal creates it */
-    }
-    if (!content) continue;
-    const cropped = content.slice(0, Math.min(12_000, budget));
-    budget -= cropped.length;
-    blocks.push(`### FILE: ${relative}\n\`\`\`\n${cropped}\n\`\`\``);
-  }
-  return blocks.join('\n\n');
+/**
+ * What this task's prompt carries: the files it names, what they import, what imports them, their
+ * tests and the neighbours that mention them — in that order, inside one character budget.
+ */
+function contextFor(task: AutonomousTaskInput) {
+  return planTaskContext({ seeds: task.targetFiles || [] });
 }
 
-function buildPrompt(task: AutonomousTaskInput, extra?: string): string {
-  const fileIndex = scanWorkspace()
-    .files.slice(0, 400)
-    .map((f) => f.path)
-    .join('\n');
+/** The two half-sections that differ between context strategies, kept apart for the eval. */
+export interface TaskPromptSections {
+  /** Every path in the folder, in the order the prompt lists them. */
+  fileIndex: string;
+  /** `### FILE:` blocks for the files whose content the model should see. */
+  context: string;
+}
+
+/**
+ * The task's prompt, with the context it is handed.
+ *
+ * Exported so `tools/eval` can hold both context strategies against the *same* rules, task lines
+ * and JSON contract — an eval that re-implements the prompt would compare its own copies.
+ */
+export function assembleTaskPrompt(
+  task: AutonomousTaskInput,
+  sections: TaskPromptSections,
+  extra?: string
+): string {
+  const { fileIndex, context } = sections;
   const stack = stackLabel(task);
   const rules = [
     "You are the autonomous code engine. Reply with JSON only: { summary, warnings: [], changes: [{ path, action, content, reason }] }. No prose outside the JSON.",
@@ -147,7 +142,6 @@ function buildPrompt(task: AutonomousTaskInput, extra?: string): string {
     `PROJECT: ${task.projectName || 'Project'}${stack ? ` (${stack})` : ''}`,
     extra ? `\n${extra}` : ''
   ].filter(Boolean);
-  const context = contextFor(task.targetFiles || []);
   return [
     ...rules,
     '',
@@ -159,6 +153,14 @@ function buildPrompt(task: AutonomousTaskInput, extra?: string): string {
   ].join('\n');
 }
 
+function buildPrompt(task: AutonomousTaskInput): string {
+  const plan = contextFor(task);
+  return assembleTaskPrompt(task, {
+    fileIndex: plan.indexPath.join('\n'),
+    context: plan.blocks
+  });
+}
+
 /** The next attempt's prompt: the task again, plus what just failed and the raw output. */
 function buildRepairPrompt(
   task: AutonomousTaskInput,
@@ -166,6 +168,7 @@ function buildRepairPrompt(
   failingOutput: string,
   applied: string[]
 ): string {
+  const context = contextFor(task).blocks;
   return [
     task.ru
       ? 'Предыдущая попытка записала файлы, но проверки проекта не прошли. Ответь полным набором изменений, который проходит эти проверки, в том же JSON-формате.'
@@ -182,7 +185,16 @@ function buildRepairPrompt(
     '',
     `WHAT THE CHECKS SAID:\n${diagnosis}`,
     '',
-    `RAW CHECK OUTPUT:\n${failingOutput || '(no detail captured)'}`
+    `RAW CHECK OUTPUT:\n${failingOutput || '(no detail captured)'}`,
+    '',
+    /*
+     * The first prompt showed the code; the repair prompt used to show only the failure. A model
+     * asked to rewrite a file it cannot see answers with nothing — the log showed two attempts
+     * ending in «Модель не вернула изменений» for exactly that reason. The failed batch was
+     * undone before this prompt was built, so what is read here is the state the model must
+     * start from.
+     */
+    context ? `CURRENT CONTENT OF THE FILES THAT MATTER (the failed batch was undone):\n${context}` : ''
   ]
     .filter(Boolean)
     .join('\n');
@@ -379,22 +391,30 @@ export function pickNextPipelineTask(
 export async function runAutonomousTask(task: AutonomousTaskInput, runIdInput?: string): Promise<AutonomousRunResult> {
   const root = getWorkspaceRoot();
   if (!root) throw new WorkspaceError('no_workspace', 'No workspace');
+
+  const runId = runIdInput || `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const startedAt = new Date().toISOString();
+
   if (!hasAiProvider()) {
+    /*
+     * The refusal is written under the id the client already opened its stream for. It used to
+     * be pushed under `no-run`, so the plate never received it: the run was over while the screen
+     * kept saying "the AI is coding", with a counter that never moved.
+     */
+    autonomousLog.begin({ runId, taskTitle: task.taskTitle, startedAt, maxAttempts: AUTONOMOUS_MAX_ATTEMPTS });
     autonomousLog.push({
-      runId: 'no-run',
+      runId,
       seq: 0,
       type: 'run_failed',
       text: task.ru
         ? 'Автономный цикл не запущен: не настроен ни один ключ AI-провайдера.'
         : 'The autonomous loop did not start: no AI provider key is configured.'
     });
+    autonomousLog.update(runId, { status: 'failed', attempts: 0 });
     // Not a WorkspaceError: a missing key is a settings problem, and the route turns it into
     // its own translated answer.
     throw new Error('no_ai_key');
   }
-
-  const runId = runIdInput || `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const startedAt = new Date().toISOString();
 
   autonomousLog.begin({ runId, taskTitle: task.taskTitle, startedAt, maxAttempts: AUTONOMOUS_MAX_ATTEMPTS });
   autonomousLog.push({
@@ -452,6 +472,37 @@ export async function runAutonomousTask(task: AutonomousTaskInput, runIdInput?: 
     applied = outcome.applied;
     lastSummary = outcome.summary;
     verdict = outcome.verdict;
+
+    if (verdict === 'none') {
+      /*
+       * No checks configured is not a failed check: nothing ran, so nothing failed. Retrying
+       * asked the same model the same question behind the same missing gate, and each retry
+       * rolled the previous batch back — the log said «Проверки не настроены» and then
+       * «Проверки не прошли» four times, which is both untrue and useless. The batch stays,
+       * the run ends on the first answer, and the words say exactly what was confirmed.
+       */
+      autonomousLog.push({
+        runId,
+        seq: 0,
+        type: 'run_completed',
+        attempt,
+        text: task.ru
+          ? 'Изменения записаны. В проекте нет проверок — результат не подтверждён, откат доступен в разделе файлов.'
+          : 'The files are written. The project has no checks — nothing confirmed the result; the batch can be undone in the files section.',
+        detail: { backupId, verdict: 'none' }
+      });
+      return {
+        runId,
+        status: 'completed',
+        attempts: attempt,
+        maxAttempts: AUTONOMOUS_MAX_ATTEMPTS,
+        applied,
+        backupId,
+        verdict,
+        summary: lastSummary,
+        engine: getEngineLabel()
+      };
+    }
 
     if (outcome.passed) {
       autonomousLog.push({

@@ -24,6 +24,8 @@ vi.mock('../services/api', async (importOriginal) => {
 });
 
 import { GitPanel } from '../components/GitPanel';
+import { ApiError } from '../services/api';
+import { serverUnreachableMessage } from '../utils/serverUnreachable';
 import {
   commitGitChangesApi,
   createGitBranchApi,
@@ -300,5 +302,22 @@ describe('Git panel', () => {
     expect(screen.getByText('feature')).toBeTruthy();
     // Nothing was offered to save, so nothing can be saved by accident.
     expect((screen.getByRole('button', { name: /Сохранить версию \(0\)/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('8. says the app server is not answering when the answer was not an API envelope', async () => {
+    /*
+     * A bare Vite server answers `/api/files/git/status` with the app's own HTML. The API layer turns
+     * that into the sentence every screen shares, and the panel prints it instead of "Server error".
+     */
+    statusMock.mockRejectedValue(new ApiError(404, serverUnreachableMessage('ru'), undefined, 'not_json'));
+
+    renderPanel();
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Сервер приложения не отвечает — перезапустите его и обновите страницу.')
+      ).toBeTruthy()
+    );
+    expect(screen.queryByText(/Server error/)).toBeNull();
   });
 });

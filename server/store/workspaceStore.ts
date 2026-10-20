@@ -38,6 +38,16 @@ interface StoreFileShape {
 
 let boundRoot: string | null = null;
 let loaded = false;
+/**
+ * The exact text of `workspace.json` the in-memory root was read from.
+ *
+ * One app, one folder, but more than one process can hold the file: the desktop window serves the
+ * API itself, a second window or a dev server binds the folder and writes this file. A store that
+ * read it once kept answering "no folder" for the rest of its life while the disk said otherwise —
+ * the Auto run then refused a project that was perfectly connected. Comparing the text on every
+ * read is a few hundred bytes and makes the file the one truth.
+ */
+let loadedRaw: string | null | undefined;   // `undefined`: never read, not "read and empty".
 
 export function getStoreFilePath(): string {
   // Tests point this at a temp file so they never touch the developer's real workspace.
@@ -49,11 +59,19 @@ export function getBackupRoot(): string {
   return process.env.EPC_WORKSPACE_BACKUP_DIR || path.join(process.cwd(), 'data', 'workspace-backups');
 }
 
-function readStoreFile(): StoreFileShape {
+function readStoreRaw(): string | null {
   try {
     const filePath = getStoreFilePath();
-    if (!fs.existsSync(filePath)) return { version: 1, root: null, updatedAt: null };
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseStoreFile(raw: string | null): StoreFileShape {
+  if (raw === null) return { version: 1, root: null, updatedAt: null };
+  try {
+    const parsed = JSON.parse(raw);
     const root = typeof parsed?.root === 'string' && parsed.root.trim() ? parsed.root : null;
     return {
       version: 1,
@@ -69,16 +87,22 @@ function readStoreFile(): StoreFileShape {
 function writeStoreFile(): void {
   const filePath = getStoreFilePath();
   const payload: StoreFileShape = { version: 1, root: boundRoot, updatedAt: new Date().toISOString() };
+  const text = `${JSON.stringify(payload, null, 2)}\n`;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, { encoding: 'utf8' });
+  fs.writeFileSync(filePath, text, { encoding: 'utf8' });
+  // The write is the newest text; there is nothing to re-read until somebody else writes.
+  loadedRaw = text;
 }
 
 function ensureLoaded(): void {
-  if (loaded) return;
+  const raw = readStoreRaw();
+  if (loaded && raw === loadedRaw) return;
   loaded = true;
-  const parsed = readStoreFile();
-  // A folder that was moved or deleted since the last run must not stay "connected".
-  if (parsed.root && fs.existsSync(parsed.root)) boundRoot = path.resolve(parsed.root);
+  loadedRaw = raw;
+  const parsed = parseStoreFile(raw);
+  // A folder that was moved or deleted since the last run must not stay "connected"; an empty
+  // file must also clear a root another process unbound, not leave the old one in memory.
+  boundRoot = parsed.root && fs.existsSync(parsed.root) ? path.resolve(parsed.root) : null;
 }
 
 /** Called once on boot, mirrors initApiKeyStore(). */
@@ -197,4 +221,7 @@ export function resolveWorkspacePath(relativePath: unknown, options: { allowSens
 export function resetWorkspaceStoreForTests(): void {
   boundRoot = null;
   loaded = true;
+  // Pretend this process already saw the file as it is now: the helper must not read the
+  // developer's real folder into a test, but a later write to the temp file must still be seen.
+  loadedRaw = readStoreRaw();
 }

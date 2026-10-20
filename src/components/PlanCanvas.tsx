@@ -15,12 +15,14 @@ import {
   PanelsTopLeft,
   Plus,
   Rows3,
+  SlidersHorizontal,
   Sparkles,
   X
 } from 'lucide-react';
 
 import { CanvasLaneSkin, LaneColor, ProjectState, ProjectPhase, ProjectTask, TaskStatus } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { PaneActionsDivider, usePaneActions } from './studio/paneActions';
 import { localizeText } from '../utils/textLocalizer';
 import {
   CARD_HEIGHT,
@@ -189,6 +191,8 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
   fitToPane = false
 }) => {
   const { language, t } = useLanguage();
+  /** The studio's window controls, when this board is one window of it; null on the plan screen. */
+  const paneActions = usePaneActions();
 
   const [view, setView] = useState<CanvasView>({ x: 0, y: 0, scale: 1 });
   const [size, setSize] = useState(FALLBACK_SIZE);
@@ -214,6 +218,8 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
   const [showLinks, setShowLinks] = useState(true);
   /** The board overview, open by default: it is only in the way on a small screen. */
   const [mapOpen, setMapOpen] = useState(true);
+  /** The floating board tools, open by default and folded to one small button when dismissed. */
+  const [toolsOpen, setToolsOpen] = useState(true);
   /** The right-click menu: what it is about, and where the pointer was. */
   const [menu, setMenu] = useState<PlanMenuTarget | null>(null);
   /**
@@ -1251,7 +1257,10 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
        * leaves the words to the tooltip — the label is still the accessible name, so a screen reader
        * and a test hear the same words the tooltip shows.
        */}
-      <div className="flex flex-wrap items-center gap-1">
+      <div
+        data-testid="plan-toolbar"
+        className={`flex flex-wrap items-center gap-1 ${fitToPane ? 'px-1.5' : ''}`}
+      >
         {onSwitchToKanban && (
           <div className="mr-1 flex items-center gap-0.5">
             <span
@@ -1314,6 +1323,10 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
             onClick={onOpenStudio}
           />
         )}
+
+        {/* The window's controls ride at the end of a row that already exists, so the board does
+            not grow a second header above this one — that second header was the matryoshka. */}
+        {paneActions && <div className="ml-auto flex items-center"><PaneActionsDivider />{paneActions}</div>}
       </div>
 
       {/* A dependency that points at nothing is a plan-level problem, and silently drawing no line
@@ -1335,10 +1348,17 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
        * guessed from the viewport: `clamp(420px, calc(100vh - 320px), 940px)` was a guess that ran
        * out on a tall window and left a band of empty slate under a board that could have used it.
        * The floor stays, so a short window scrolls instead of shrinking the board to nothing.
+       *
+       * As a window of the studio (`fitToPane`) the board has no frame of its own: the pane is the
+       * frame. A rounded card inside a rounded pane is the matryoshka in its last form — a box in a
+       * box, both saying "this is the edge". Flush with the pane, the toolbar is the only top edge
+       * and the dots run to the divider. On the plan screen there is no pane around it, so the card
+       * stays.
        */}
       <div
-        className={`relative flex flex-1 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 ${
-          fitToPane ? 'min-h-0' : 'min-h-[420px]'
+        data-testid="plan-board"
+        className={`relative flex flex-1 flex-col overflow-hidden bg-slate-950 ${
+          fitToPane ? 'min-h-0' : 'min-h-[420px] rounded-2xl border border-slate-800'
         }`}
       >
         <div
@@ -1740,36 +1760,63 @@ export const PlanCanvas: React.FC<PlanCanvasProps> = ({
             })()}
         </div>
 
-        {/* Board controls, in screen space so they never scale with the plan. */}
-        <div className="absolute right-3 top-3 flex items-center gap-1 bg-slate-900/95 border border-slate-800 rounded-xl p-1 shadow-lg backdrop-blur">
-          {dependency.edges.length > 0 && (
-            <button
-              onClick={() => setShowLinks((visible) => !visible)}
-              title={t.plan.linksLegendTitle}
-              aria-pressed={showLinks}
-              data-testid="plan-links-toggle"
-              className={`h-7 px-2 rounded-lg text-[11px] font-medium flex items-center gap-1.5 cursor-pointer ${
-                showLinks ? 'bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-white' : 'text-slate-400 hover:bg-slate-800'
-              }`}
-            >
-              <Link2 className="w-3.5 h-3.5" />
-              {t.plan.linksShow}
-              <span className="tabular-nums opacity-70">{dependency.edges.length}</span>
-            </button>
-          )}
+        {/*
+          * Board controls, in screen space so they never scale with the plan.
+          *
+          * One row of 28 px hit areas, no word for the links — the icon and its tooltip carry it,
+          * and the count lives in the tooltip rather than as a second badge. The whole row folds
+          * into a single button: a board is for the cards, and the controls are only needed while
+          * moving around it.
+          */}
+        {toolsOpen ? (
+          <div className="absolute right-3 top-3 flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/90 p-0.5 shadow-md backdrop-blur">
+            {dependency.edges.length > 0 && (
+              <>
+                <IconButton
+                  label={`${t.plan.linksShow} · ${dependency.edges.length}`}
+                  icon={Link2}
+                  size="xs"
+                  variant={showLinks ? 'accent' : 'ghost'}
+                  aria-pressed={showLinks}
+                  data-testid="plan-links-toggle"
+                  onClick={() => setShowLinks((visible) => !visible)}
+                />
+                <span aria-hidden="true" className="mx-1 h-3.5 w-px shrink-0 bg-slate-800" />
+              </>
+            )}
 
-          <IconButton label={t.plan.zoomOut} icon={Minus} size="xs" onClick={() => zoomByStep(-1)} />
+            <IconButton label={t.plan.zoomOut} icon={Minus} size="xs" onClick={() => zoomByStep(-1)} />
+            <button
+              onClick={() => applyView({ x: size.width / 2, y: size.height / 2, scale: 1 })}
+              title={t.plan.resetZoom}
+              data-testid="canvas-zoom-readout"
+              className="h-7 cursor-pointer rounded-md px-1.5 text-[10px] font-medium tabular-nums text-slate-300 transition-colors hover:bg-slate-800"
+            >
+              {Math.round(view.scale * 100)}%
+            </button>
+            <IconButton label={t.plan.zoomIn} icon={Plus} size="xs" onClick={() => zoomByStep(1)} />
+            <IconButton label={t.plan.fitView} icon={Maximize2} size="xs" onClick={fitAll} />
+            <span aria-hidden="true" className="mx-1 h-3.5 w-px shrink-0 bg-slate-800" />
+            <IconButton
+              label={t.plan.boardToolsHide}
+              icon={X}
+              size="xs"
+              data-testid="canvas-tools-close"
+              onClick={() => setToolsOpen(false)}
+            />
+          </div>
+        ) : (
           <button
-            onClick={() => applyView({ x: size.width / 2, y: size.height / 2, scale: 1 })}
-            title={t.plan.resetZoom}
-            data-testid="canvas-zoom-readout"
-            className="h-7 cursor-pointer rounded-md px-2 text-[11px] font-medium tabular-nums text-slate-300 transition-colors hover:bg-slate-800"
+            type="button"
+            onClick={() => setToolsOpen(true)}
+            title={t.plan.boardToolsShow}
+            aria-label={t.plan.boardToolsShow}
+            data-testid="canvas-tools-open"
+            className="absolute right-3 top-3 flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-slate-800 bg-slate-900/90 text-slate-400 shadow-md backdrop-blur transition-colors hover:bg-slate-800 hover:text-slate-100"
           >
-            {Math.round(view.scale * 100)}%
+            <SlidersHorizontal className="h-3.5 w-3.5" />
           </button>
-          <IconButton label={t.plan.zoomIn} icon={Plus} size="xs" onClick={() => zoomByStep(1)} />
-          <IconButton label={t.plan.fitView} icon={Maximize2} size="xs" onClick={fitAll} />
-        </div>
+        )}
 
         {/*
          * The overview: what is on the board and where the viewport sits on it.

@@ -16,6 +16,7 @@ import {
   fetchChecksApi,
   runVerificationApi
 } from '../services/api';
+import { useFolderRevision } from '../services/folderFeed';
 import { checkEvidenceHeadline, toCheckEvidence } from '../utils/checkEvidence';
 import { Button } from './ui/Button';
 
@@ -72,11 +73,19 @@ export const ProjectCheckStrip: React.FC<ProjectCheckStripProps> = ({
   const [error, setError] = useState('');
   const lastAutoKey = useRef<string | number | null>(null);
   const runToken = useRef(0);
+  /** Another folder was connected: what this strip knows may be about the previous one. */
+  const folderRevision = useFolderRevision();
 
   const evidence = useMemo(() => (report ? toCheckEvidence(report, ru) : null), [report, ru]);
 
-  // What this folder can check at all. Asked again when another folder is connected.
+  // What this folder can check at all. Asked again when another folder is connected — whether that
+  // happened through this screen (`root` changes) or on another one while this strip stayed mounted
+  // (`folderRevision` changes).
   useEffect(() => {
+    // The last run belongs to the folder that was connected when it ran; a new folder starts
+    // without a verdict rather than with someone else's.
+    setReport(null);
+    onReport?.(null);
     if (!root) {
       setChecks([]);
       setReport(null);
@@ -102,7 +111,7 @@ export const ProjectCheckStrip: React.FC<ProjectCheckStripProps> = ({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [root]);
+  }, [root, folderRevision]);
 
   useEffect(() => {
     onRunningChange?.(isRunning);

@@ -12,6 +12,7 @@ import {
 import { buildCompilePromptText, ensureCompiledSections } from '../utils/promptTexts';
 import { hasTestRunner, localAcceptance } from '../utils/localAcceptance';
 import { agentProfileFor, referenceFor, rulesFileLine, surfaceDescription } from '../../src/utils/agentProfiles';
+import { createCompileStream } from '../utils/compileStream';
 
 const compilePromptSchema = {
   type: Type.OBJECT,
@@ -58,6 +59,19 @@ const compilePromptSchema = {
 };
 
 export async function compilePrompt(req: Request, res: Response) {
+  /*
+   * The live channel, when the screen asked for one. It answers with the same envelope the plain
+   * route does — plus the model's own text while it is being written (see `utils/compileStream.ts`).
+   */
+  const stream = createCompileStream(req, res);
+  const respond = (payload: { success: true; data: any; engine: string }) => {
+    if (stream) {
+      stream.result(payload);
+      return;
+    }
+    res.json(payload);
+  };
+
   try {
     const { userRequest, projectMap, agent, contextMode, taskTitle, brief, language, skillLevel, rules, projectName } = req.body;
     const ai = hasAiProvider();
@@ -128,7 +142,17 @@ export async function compilePrompt(req: Request, res: Response) {
         verificationCommands: declaredCommands,
         testRunner
       });
-      const parsed = await callAiJson(prompt, compilePromptSchema);
+      const parsed = await callAiJson(
+        prompt,
+        compilePromptSchema,
+        stream
+          ? {
+              onDelta: stream.delta,
+              onAttempt: (provider, model) => stream.attempt(provider, model),
+              signal: stream.signal
+            }
+          : undefined
+      );
       if (parsed && parsed.promptText) {
         /*
          * The six sections are a promise the screen makes when it shows a finished prompt, and the
@@ -173,7 +197,7 @@ export async function compilePrompt(req: Request, res: Response) {
         if (rulesSection && !parsed.promptText.includes(rulesSectionTitle(isRu))) {
           parsed.promptText = `${rulesSection}\n\n${parsed.promptText}`;
         }
-        return res.json({ success: true, data: { ...parsed, rulesCheck }, engine: getEngineLabel() });
+        return respond({ success: true, data: { ...parsed, rulesCheck }, engine: getEngineLabel() });
       }
     }
 
@@ -376,7 +400,7 @@ ${criteriaLines}
 2. ${returnFormat}
 3. Verification instructions.`;
 
-    return res.json({
+    return respond({
       success: true,
       data: {
         taskTitle: taskTitle || userRequest,
@@ -408,7 +432,9 @@ ${criteriaLines}
     });
   } catch (err: any) {
     console.error('Error in /api/prompt/compile:', err);
-    res.status(500).json({ success: false, error: err.message || 'Failed to compile prompt' });
+    const message = err?.message || 'Failed to compile prompt';
+    if (stream) stream.fail(message);
+    else res.status(500).json({ success: false, error: message });
   }
 
 

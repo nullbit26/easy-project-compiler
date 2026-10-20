@@ -336,6 +336,175 @@ textarea:focus-visible {
 }
 
 /*
+  The update row's status light: one hairline of light running around the row's own edge.
+
+  There is no glyph at all — the thing that says "working" is the border of the thing being
+  described. It costs no horizontal room, so the version and the one icon keep the space they need,
+  and it cannot be mistaken for a second control. The light is a conic gradient masked to a 1 px
+  ring, so it travels the perimeter instead of fading in place.
+
+  Decoration only: the state is said in words beside it, and the ring is a pseudo-element, so it is
+  never read out.
+*/
+@property --epc-runner-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes epc-runner {
+  to {
+    --epc-runner-angle: 360deg;
+  }
+}
+
+.epc-runner {
+  position: relative;
+}
+
+.epc-runner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--epc-runner-angle),
+    transparent 0deg 300deg,
+    var(--epc-runner-ink, rgb(56 189 248 / 0.95)) 345deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: epc-runner 2.2s linear infinite;
+}
+
+/*
+  The AI-working mark: a square assembled from small cubes, standing in for a spinner wherever the
+  app says "the model is working".
+
+  Twenty-five three-pixel pieces, one pixel apart, on a five-by-five lattice — the gaps are part of
+  the drawing, so it reads as an assembly and not as a dotted texture. Every cube is the same
+  violet; once it has settled, it turns a full revolution and comes back in sky, and the colour is
+  swapped only while it is edge-on, so the change hides inside the turn.
+
+  The drift and the turn are two animations on two elements (piece and face) on purpose: a single
+  animation owning both would restart the drift's easing at every keyframe of the turn, and the
+  piece would stutter at 90°.
+
+  Markup: `.epc-mosaic` > `.epc-mosaic-piece` (drift) > `.epc-mosaic-face` (turn). Decorative; the
+  caller supplies the words.
+*/
+.epc-mosaic {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(5, 3px);
+  grid-auto-rows: 3px;
+  gap: 1px;
+}
+
+.epc-mosaic-piece {
+  width: 3px;
+  height: 3px;
+}
+
+.epc-mosaic-face {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 1px;
+  background-color: var(--epc-mosaic-ink, #a78bfa);
+}
+
+@keyframes epc-mosaic-drift {
+  0%,
+  10% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  34% {
+    transform: translate(var(--epc-mosaic-dx), var(--epc-mosaic-dy))
+      rotate(var(--epc-mosaic-rot)) scale(1.1);
+    opacity: 1;
+  }
+  58% {
+    transform: translate(
+        calc(var(--epc-mosaic-dx) * -0.06),
+        calc(var(--epc-mosaic-dy) * -0.06)
+      )
+      rotate(calc(var(--epc-mosaic-rot) * -0.1)) scale(1.01);
+    opacity: 1;
+  }
+  66%,
+  100% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes epc-mosaic-turn {
+  0%,
+  66% {
+    transform: rotateY(0deg);
+    background-color: var(--epc-mosaic-ink, #a78bfa);
+  }
+  73% {
+    transform: rotateY(90deg);
+    background-color: var(--epc-mosaic-ink, #a78bfa);
+  }
+  73.5% {
+    transform: rotateY(90deg);
+    background-color: var(--epc-mosaic-flip, #7dd3fc);
+  }
+  80% {
+    transform: rotateY(180deg);
+    background-color: var(--epc-mosaic-flip, #7dd3fc);
+  }
+  86.5% {
+    transform: rotateY(270deg);
+    background-color: var(--epc-mosaic-flip, #7dd3fc);
+  }
+  87% {
+    transform: rotateY(270deg);
+    background-color: var(--epc-mosaic-ink, #a78bfa);
+  }
+  94%,
+  100% {
+    transform: rotateY(360deg);
+    background-color: var(--epc-mosaic-ink, #a78bfa);
+  }
+}
+
+.epc-mosaic-piece {
+  animation: epc-mosaic-drift var(--epc-mosaic-duration, 2.4s) cubic-bezier(0.42, 0, 0.22, 1)
+    var(--epc-mosaic-delay, 0ms) infinite;
+}
+
+.epc-mosaic-face {
+  animation: epc-mosaic-turn var(--epc-mosaic-duration, 2.4s) linear var(--epc-mosaic-delay, 0ms)
+    infinite;
+}
+
+/* A gloss crossing the filled part of the progress bar while the download is running. */
+@keyframes epc-bar-sheen {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(320%);
+  }
+}
+
+.epc-bar-sheen {
+  animation: epc-bar-sheen 1.6s ease-in-out infinite;
+}
+
+
+/*
   A preference for less movement is a request, not a preference to be admired: the pieces appear in
   place, without the drift and the blur, and the overlay goes away sooner (that part is in the
   component, which reads the same media query). The mark in the title bar keeps its picture and
@@ -360,5 +529,17 @@ textarea:focus-visible {
   .toast-enter,
   .toast-leave {
     animation-duration: 1ms;
+  }
+
+  /* The light on the row's edge stops travelling, and the mark holds a still frame of itself. */
+  .epc-runner::before,
+  .epc-mosaic-piece,
+  .epc-mosaic-face {
+    animation: none;
+  }
+
+  .epc-bar-sheen {
+    animation: none;
+    opacity: 0;
   }
 }

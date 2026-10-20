@@ -5,6 +5,9 @@ import { AiActivityIndicator } from '../components/AiActivityIndicator';
 import { getAiActivity, resetAiActivityForTests, trackAiRequest } from '../services/aiActivity';
 import { compilePromptApi } from '../services/api';
 
+/** Nothing that draws a frame: a border, a ring, a plate or a rounded tile. */
+const FRAME_CLASS = /(?:^|\s)(?:border|ring-\S+|rounded-\S+|bg-\S+|shadow-\S+|p[xytblr]?-\S+)/;
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((res) => {
@@ -59,6 +62,48 @@ describe('AI activity indicator', () => {
     // The user sees the transition instead of the panel silently changing.
     expect(screen.getByText('Готово')).toBeInTheDocument();
     expect(getAiActivity().active).toBe(false);
+  });
+
+  it('2b. Works under the app’s own mark instead of a generic spinner', async () => {
+    render(<AiActivityIndicator />);
+
+    await act(async () => {
+      trackAiRequest('compile', () => new Promise<void>(() => {}));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
+
+    /*
+     * The mark is a square assembled from 25 cubes (ui/AiMosaic). It replaces the rotating arc: a
+     * spinner is the same grey everywhere, and this one carries the app's violet.
+     */
+    const mark = document.querySelector('.epc-mosaic');
+    expect(mark).not.toBeNull();
+    expect(mark!.getAttribute('aria-hidden')).toBe('true');
+    expect(mark!.querySelectorAll('.epc-mosaic-piece')).toHaveLength(25);
+    expect(document.querySelector('.animate-spin')).toBeNull();
+  });
+
+  it('2c. Never frames the mark: no plate, border or ring around it', async () => {
+    render(<AiActivityIndicator />);
+
+    await act(async () => {
+      trackAiRequest('compile', () => new Promise<void>(() => {}));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
+
+    /*
+     * The slot reserves the mark's size so the card does not jump, and that is all it does. A tinted
+     * plate or a border here is the boxed look the mark exists to replace, so the class list is held
+     * to size and alignment only.
+     */
+    const mark = document.querySelector('.epc-mosaic') as HTMLElement;
+    const slot = mark.parentElement as HTMLElement;
+    expect(mark.className).not.toMatch(FRAME_CLASS);
+    expect(slot.className).not.toMatch(FRAME_CLASS);
   });
 
   it('3. Explains a long wait instead of spinning in silence', async () => {

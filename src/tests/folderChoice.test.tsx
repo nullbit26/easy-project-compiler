@@ -205,6 +205,25 @@ describe('The working screen', () => {
     await waitFor(() => expect(screen.getByText('Папка подключена')).toBeInTheDocument());
   });
 
+  it('2b. keeps the reconnected folder on the project, so the canvas can name it later', async () => {
+    // The server has no folder; the project remembers one and gets it back.
+    mockServer({ root: null });
+    const onFolderBound = vi.fn();
+    render(
+      <LanguageProvider>
+        <ProjectProvider>
+          <ProjectWorkspace project={projectFixture()} onProjectFolderBound={onFolderBound} />
+        </ProjectProvider>
+      </LanguageProvider>
+    );
+
+    await waitFor(() => expect(screen.getByText(/Проект создавался с папкой/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Подключить её/ }));
+
+    // Binding is not a fact about the screen: the Auto run reads `project.workspaceRoot`.
+    await waitFor(() => expect(onFolderBound).toHaveBeenCalledWith(PROJECT_FOLDER));
+  });
+
   it('3. sends a project that never had a folder to the wizard that asks for one', async () => {
     mockServer({ root: null });
     const project = projectFixture();

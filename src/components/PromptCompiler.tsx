@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ProjectState, AgentType, ContextMode, CompiledPrompt } from '../types';
-import { compilePromptApi } from '../services/api';
+import { compilePromptStreamApi } from '../services/api';
+import { beginRun, finishRun, pushRunDelta, pushRunLine, resetRunTrace, useRunStream } from '../services/runStream';
+import { RunTerminal } from './RunTerminal';
+import { formatBytes } from '../utils/byteSize';
 import { useLanguage } from '../context/LanguageContext';
 import { autonomyOf } from '../utils/workingMode';
 import { journeyHeading, journeyNumber } from '../utils/journeySteps';
@@ -80,7 +83,12 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
   );
 
   const [isCompiling, setIsCompiling] = useState(false);
+  /** How this screen's last compile ended, when it ended without a prompt. */
+  const [compileOutcome, setCompileOutcome] = useState<'error' | 'cancelled' | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const run = useRunStream();
+  /** The request in flight: the terminal's stop button aborts it, and the server stops with it. */
+  const compileAbort = useRef<AbortController | null>(null);
   const [compiledPrompt, setCompiledPrompt] = useState<CompiledPrompt | null>(null);
   const [compiledSignature, setCompiledSignature] = useState('');
   const copyFlash = useCopyFlash(2000);
@@ -96,6 +104,17 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
 
   const isOutdated = Boolean(compiledPrompt) && compiledSignature !== buildSignature();
 
+  /**
+   * Stops the compile the terminal is showing.
+   *
+   * Aborting the fetch closes the response; the server sees the close and stops asking the
+   * provider, so a cancelled run is not paid for behind a hidden card.
+   */
+  const cancelCompile = () => {
+    if (!isCompiling) return;
+    compileAbort.current?.abort();
+  };
+
   const handleCompile = async () => {
     if (!project) return;
     if (!taskInput.trim()) {
@@ -106,37 +125,100 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
     const signature = buildSignature();
     setIsCompiling(true);
     setErrorMsg('');
+    setCompileOutcome(null);
+
+    const activeFiles = (project.projectMap?.files || []).filter(
+      (f) => selectedFilePaths.length === 0 || selectedFilePaths.includes(f.path)
+    );
+    const scopedProjectMap = {
+      ...project.projectMap,
+      files: activeFiles
+    };
+    const payload = {
+      userRequest: taskInput,
+      taskTitle: taskInput,
+      projectMap: scopedProjectMap,
+      brief: project.brief,
+      agent: selectedAgent,
+      contextMode,
+      skillLevel: autonomyOf(project),
+      language,
+      // The server reads these against the connected folder, so a rule that names a file the
+      // folder no longer has does not reach the agent as an instruction to be followed.
+      rules: project.rulesFilesContent,
+      projectName: project.name
+    };
+
+    /*
+     * The form becomes a terminal before the request leaves, like the beginner flow does: the
+     * request's own facts go in first, then the model writes into the same log as it produces the
+     * prompt. A spinner with a sentence under it was the one screen in the app that hid what it was
+     * waiting for.
+     */
+    const controller = new AbortController();
+    compileAbort.current = controller;
+    const startedAt = Date.now();
+    beginRun({
+      kind: 'compile',
+      title: language === 'ru' ? 'Сборка промпта' : 'Building the prompt',
+      lines: [
+        { label: language === 'ru' ? 'Задача' : 'Task', text: payload.taskTitle },
+        { label: language === 'ru' ? 'Агент' : 'Agent', text: agentLabel },
+        {
+          tone: 'muted',
+          label: language === 'ru' ? 'Контекст' : 'Context',
+          text: `${activeFiles.length} ${language === 'ru' ? 'файлов' : 'files'} · ${contextMode}`
+        },
+        {
+          label: language === 'ru' ? 'Запрос' : 'Request',
+          text: `POST /api/prompt/compile?stream=1 · ${formatBytes(
+            new TextEncoder().encode(JSON.stringify(payload)).length
+          )}`
+        }
+      ]
+    });
 
     try {
-      const activeFiles = (project.projectMap?.files || []).filter(
-        (f) => selectedFilePaths.length === 0 || selectedFilePaths.includes(f.path)
-      );
-      const scopedProjectMap = {
-        ...project.projectMap,
-        files: activeFiles
-      };
-
-      const data = await compilePromptApi({
-        userRequest: taskInput,
-        taskTitle: taskInput,
-        projectMap: scopedProjectMap,
-        brief: project.brief,
-        agent: selectedAgent,
-        contextMode,
-        skillLevel: autonomyOf(project),
-        language,
-        // The server reads these against the connected folder, so a rule that names a file the
-        // folder no longer has does not reach the agent as an instruction to be followed.
-        rules: project.rulesFilesContent,
-        projectName: project.name
+      const data = await compilePromptStreamApi(payload, {
+        // A new provider or model is a new answer: the abandoned model's half-written text is not
+        // part of it, so the trace is dropped with the model that wrote it.
+        onAttempt: (provider, model) => {
+          resetRunTrace();
+          pushRunLine('step', `${provider}${model ? ` / ${model}` : ''}`, {
+            label: language === 'ru' ? 'Модель' : 'Model'
+          });
+        },
+        onDelta: pushRunDelta,
+        signal: controller.signal
       });
 
+      const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+      pushRunLine('success', `200 OK · ${seconds} ${language === 'ru' ? 'с' : 's'}`);
+      finishRun(
+        'success',
+        language === 'ru'
+          ? `Промпт собран · ${data.promptText.length} симв. · ~${data.estimatedTokens} токенов`
+          : `Prompt built · ${data.promptText.length} chars · ~${data.estimatedTokens} tokens`
+      );
       setCompiledPrompt(data);
       setCompiledSignature(signature);
     } catch (err: any) {
-      console.error('Failed to compile prompt:', err);
-      setErrorMsg(err?.userMessage || err?.message || 'Failed to compile prompt.');
+      // A stopped request is not a failure: nothing went wrong, the reader stopped it.
+      if (controller.signal.aborted) {
+        finishRun(
+          'cancelled',
+          language === 'ru' ? 'Отменено · запрос остановлен' : 'Cancelled · the request was stopped'
+        );
+        setErrorMsg('');
+        setCompileOutcome('cancelled');
+        return;
+      }
+      const message = err?.userMessage || err?.message || 'Failed to compile prompt.';
+      finishRun('error', `${language === 'ru' ? 'Ошибка' : 'Failed'} · ${message}`);
+      setErrorMsg(message);
+      setCompileOutcome('error');
     } finally {
+      if (compileAbort.current === controller) compileAbort.current = null;
       setIsCompiling(false);
     }
   };
@@ -201,10 +283,10 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
       */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
-          <span className="w-6 h-6 rounded-lg bg-indigo-500/15 text-indigo-300 flex items-center justify-center font-bold text-xs shrink-0">
+          <span className="w-6 h-6 rounded-md bg-slate-800/80 ring-1 ring-inset ring-slate-700 text-slate-300 flex items-center justify-center font-semibold text-[11px] shrink-0">
             {journeyNumber('prompt')}
           </span>
-          <h2 className="text-sm font-semibold text-white">{journeyHeading('prompt', t)}</h2>
+          <h2 className="text-sm font-semibold text-slate-100">{journeyHeading('prompt', t)}</h2>
         </div>
 
         <div className="flex items-center gap-3">
@@ -213,14 +295,14 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
             this is the screen that uses it.
           */}
           {offersAgentPicker ? (
-            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 shrink-0">
-              <Cpu className="w-4 h-4 text-indigo-400" />
-              <span className="text-xs text-slate-400 font-medium">{t.common.targetAgent}</span>
+            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 shrink-0">
+              <Cpu className="w-3.5 h-3.5 text-slate-500" />
+              <span className="text-[11px] text-slate-400">{t.common.targetAgent}</span>
               <select
                 value={selectedAgent}
                 onChange={(e) => onSelectAgent?.(e.target.value as AgentType)}
                 aria-label={t.common.targetAgent}
-                className="bg-transparent text-xs font-bold text-indigo-300 cursor-pointer"
+                className="bg-transparent text-[11px] font-medium text-slate-200 cursor-pointer"
               >
                 <option value="DeepSeek / Web Chat">{language === 'ru' ? 'DeepSeek / Веб-чат' : 'DeepSeek / Web Chat'}</option>
                 <option value="Cursor">Cursor</option>
@@ -236,10 +318,10 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
               </select>
             </div>
           ) : (
-            <span className="flex items-center gap-1.5 text-xs text-slate-400 shrink-0">
-              <Cpu className="w-3.5 h-3.5 text-indigo-400/70" />
+            <span className="flex items-center gap-1.5 text-[11px] text-slate-400 shrink-0">
+              <Cpu className="w-3.5 h-3.5 text-slate-500" />
               <span>{t.common.targetAgent}</span>
-              <span data-testid="compiler-agent-value" className="font-bold text-indigo-300">
+              <span data-testid="compiler-agent-value" className="font-medium text-slate-200">
                 {agentLabel}
               </span>
             </span>
@@ -259,7 +341,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
             counting digits met two numbering systems in one screen, so the panels now say what they
             hold and the order is carried by the layout alone.
           */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
             {/*
               The box says what it holds: the placeholder names the task, the field itself carries
               the name for screen readers — no heading above both.
@@ -270,7 +352,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
               placeholder={t.compiler.taskPlaceholder}
               rows={3}
               aria-label={t.compiler.panel1Title}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-100 focus:border-indigo-500 transition-colors"
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-100 focus:border-slate-600 transition-colors"
             />
 
             {/* Quick Task Selector from Plan */}
@@ -282,7 +364,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
               <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
                 {project.phases.map((phase) => (
                   <div key={phase.id} className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide block">
                       {language === 'ru' ? `Этап ${phase.phaseNumber}` : `Phase ${phase.phaseNumber}`}: {cleanPhaseTitle(phase.title)}
                     </span>
                     <div className="flex flex-wrap gap-1.5">
@@ -290,14 +372,14 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                         <button
                           key={t.id}
                           onClick={() => setTaskInput(t.title)}
-                          className={`text-[10px] px-2 py-1 rounded-md border font-medium transition-all cursor-pointer flex items-center gap-1 ${
+                          className={`text-[10px] px-2 py-1 rounded-md border transition-colors cursor-pointer flex items-center gap-1 ${
                             taskInput === t.title
-                              ? 'bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-white border-indigo-500 shadow-sm'
-                              : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                              ? 'bg-slate-800 text-slate-100 border-slate-700'
+                              : 'bg-transparent text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
                           }`}
                         >
                           <span>{t.title}</span>
-                          {t.status === 'completed' && <span className="text-emerald-400 font-bold text-[9px]">✓</span>}
+                          {t.status === 'completed' && <span className="text-emerald-400/80 text-[9px]">✓</span>}
                         </button>
                       ))}
                     </div>
@@ -308,11 +390,11 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
           </div>
 
           {/* Panel 2: Context Mode & File Budget Selector */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
             {settingsAreChosenForUser && !showContextSetup ? (
               <div className="space-y-2 bg-slate-950/60 border border-slate-800 rounded-lg p-3">
                 <p className="text-[11px] text-slate-400">{t.compiler.autoChosen}</p>
-                <p className="text-xs font-bold text-slate-200">
+                <p className="text-xs font-medium text-slate-200">
                   {contextMode === 'Minimal'
                     ? t.contextModes.minimal
                     : contextMode === 'Balanced'
@@ -321,22 +403,22 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                   {' · '}
                   {t.compiler.verifiedFileIndex} {selectedFilePaths.length}/{availableFiles.length}
                 </p>
-                <Button variant="accent" size="xs" onClick={() => setShowContextSetup(true)}>
+                <Button variant="secondary" size="xs" onClick={() => setShowContextSetup(true)}>
                   {t.compiler.customizeContext}
                 </Button>
               </div>
             ) : (
               <>
             {/* Context Mode Toggle */}
-            <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] font-semibold">
+            <div className="grid grid-cols-3 gap-0.5 bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[11px] font-medium">
               {(['Minimal', 'Balanced', 'Full'] as ContextMode[]).map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setContextMode(mode)}
-                  className={`py-1.5 rounded-md transition-all cursor-pointer ${
+                  className={`py-1.5 rounded-md transition-colors cursor-pointer ${
                     contextMode === mode
-                      ? 'bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-slate-800 text-slate-100 ring-1 ring-inset ring-slate-700'
+                      : 'text-slate-500 hover:text-slate-300'
                   }`}
                 >
                   {mode === 'Minimal' ? t.contextModes.minimal : mode === 'Balanced' ? t.contextModes.balanced : t.contextModes.full}
@@ -346,7 +428,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
 
             {/* Available Files Checklist: the count is in its row — no line above it. */}
             <div className="space-y-2 pt-2 border-t border-slate-800">
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">
                 {t.compiler.verifiedFileIndex} ({selectedFilePaths.length}/{availableFiles.length})
               </span>
 
@@ -356,10 +438,10 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                   return (
                     <label
                       key={file.path}
-                      className={`flex items-center justify-between p-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                      className={`flex items-center justify-between p-2 rounded-md text-xs cursor-pointer transition-colors ${
                         isChecked
-                          ? 'bg-indigo-500/10 text-slate-200'
-                          : 'text-slate-400 hover:bg-slate-950/60 hover:text-slate-300'
+                          ? 'bg-slate-800/60 text-slate-100'
+                          : 'text-slate-500 hover:bg-slate-950/60 hover:text-slate-300'
                       }`}
                     >
                       <div className="flex items-center gap-2 truncate">
@@ -367,12 +449,12 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => handleToggleFile(file.path)}
-                          className="rounded border-slate-700 bg-slate-900 text-indigo-600 cursor-pointer"
+                          className="rounded border-slate-700 bg-slate-900 text-slate-500 cursor-pointer"
                         />
-                        <FileCode className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                        <FileCode className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                         <span className="font-mono text-[11px] truncate">{file.path}</span>
                       </div>
-                      <span className="text-[10px] text-slate-400 font-semibold uppercase shrink-0">
+                      <span className="text-[10px] text-slate-500 uppercase shrink-0">
                         {file.type}
                       </span>
                     </label>
@@ -405,7 +487,22 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                 className: `w-full ${isOutdated ? 'ring-2 ring-amber-500/50' : ''}`
               })}
             >
-              {isCompiling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+              {/*
+                Named while it is idle: a full-width bar holding one small triangle is a slab, not a
+                control. While the run is open the terminal is the thing being read, so the button
+                only keeps the spinner and the word in its tooltip.
+              */}
+              {isCompiling ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{t.compiler.compilingPrompt}</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5" />
+                  <span>{t.compiler.startCompile}</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -418,18 +515,22 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
             Before the first compile there is no result, so there is no panel either: a framed box
             holding one sentence about pressing Start was the largest empty surface on the screen.
             The sentence stands on the page, and the surface appears with the prompt.
+
+            The panel is drawn around a prompt, never around the terminal: the terminal is a surface
+            of its own, and a bordered log inside a bordered card is the plate-in-a-plate the rest of
+            the app avoids. While the run is open (or stopped) the column holds the log and nothing
+            else.
           */}
           <div
-            className={`rounded-2xl p-4 space-y-4 ${
-              compiledPrompt || isCompiling ? 'bg-slate-900 border border-slate-800' : ''
-            }`}
+            className={`space-y-4 ${compiledPrompt ? 'rounded-xl border border-slate-800 bg-slate-900 p-4' : ''}`}
           >
             {/*
               The output has no heading of its own: the token count and, when the offline engine
               answered, its badge say everything a title would — the box itself is the result.
               Both buttons are icons with the name in the tooltip, so actions read in one glance.
+              There is nothing to export while the prompt is still being written.
             */}
-            {(compiledPrompt || isCompiling) && (
+            {compiledPrompt && (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {compiledPrompt && (
@@ -445,7 +546,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                         ? 'Модель не ответила: промпт собран из задачи, файлов проекта и команд его package.json'
                         : 'No model answered: the prompt was assembled from the task, the project files and its package.json scripts'
                     }
-                    className="text-[10px] bg-amber-950/60 text-amber-300 border border-amber-900 px-2 py-0.5 rounded font-mono"
+                    className="text-[10px] text-amber-200/80 border border-amber-500/25 px-2 py-0.5 rounded font-mono"
                   >
                     {language === 'ru' ? 'без ИИ' : 'no AI'}
                   </span>
@@ -488,30 +589,39 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
               good as the instructions it was given, so the user sees here which of them were
               already stale when the prompt was compiled.
             */}
-            {compiledPrompt?.rulesCheck && (
+            {compiledPrompt?.rulesCheck && !isCompiling && (
               <div
                 data-testid="compiler-rules-check"
-                className="bg-slate-950/60 rounded-lg p-3 space-y-2"
+                className="bg-slate-950/40 border border-slate-800/70 rounded-xl p-3 space-y-2"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5" />
+                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
                     <span>{t.compiler.rulesCheckTitle}</span>
                   </span>
 
+                  {/*
+                    Two counts, two weights: a problem is a fact worth seeing, a note is
+                    bookkeeping. Neither gets a filled chip — colour here is a dot, not a surface.
+                  */}
                   {compiledPrompt.rulesCheck.audit.compared.files && (
-                    <span className="flex items-center gap-2">
+                    <span className="flex items-center gap-3 text-[10px] tabular-nums">
                       <span
                         data-testid="compiler-rules-problems"
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                          compiledPrompt.rulesCheck.audit.problems > 0
-                            ? 'bg-rose-500/10 text-rose-300'
-                            : 'bg-emerald-500/10 text-emerald-300'
+                        className={`flex items-center gap-1.5 ${
+                          compiledPrompt.rulesCheck.audit.problems > 0 ? 'text-rose-200' : 'text-slate-400'
                         }`}
                       >
+                        <span
+                          aria-hidden
+                          className={`h-1 w-1 rounded-full ${
+                            compiledPrompt.rulesCheck.audit.problems > 0 ? 'bg-rose-400' : 'bg-slate-600'
+                          }`}
+                        />
                         {compiledPrompt.rulesCheck.audit.problems} {t.map.rulesAuditProblems}
                       </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800/60 text-slate-400">
+                      <span className="flex items-center gap-1.5 text-slate-500">
+                        <span aria-hidden className="h-1 w-1 rounded-full bg-slate-700" />
                         {compiledPrompt.rulesCheck.audit.notes} {t.map.rulesAuditNotes}
                       </span>
                     </span>
@@ -526,9 +636,9 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                 {compiledPrompt.rulesCheck.checkedAt && (
                   <p
                     data-testid="compiler-rules-checked-at"
-                    className="text-[10px] text-slate-400 flex items-start gap-1.5"
+                    className="text-[10px] text-slate-500 flex items-start gap-1.5"
                   >
-                    <History className="w-3 h-3 mt-0.5 shrink-0 text-slate-400" />
+                    <History className="w-3 h-3 mt-0.5 shrink-0 text-slate-600" />
                     <span>
                       {t.compiler.rulesCheckCheckedAt}: {formatRulesCheckTime(compiledPrompt.rulesCheck.checkedAt)}
                     </span>
@@ -544,8 +654,8 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
 
                 {compiledPrompt.rulesCheck.audit.compared.files &&
                   compiledPrompt.rulesCheck.audit.findings.length === 0 && (
-                    <p className="text-[11px] text-emerald-300 flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5 shrink-0" />
+                    <p className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400/80" />
                       <span>{t.compiler.rulesCheckClean}</span>
                     </p>
                   )}
@@ -555,10 +665,10 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                     {compiledPrompt.rulesCheck.audit.findings.map((finding) => (
                       <li key={finding.id} className="flex items-start gap-2">
                         <span
-                          className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border shrink-0 mt-0.5 ${
+                          className={`text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded border shrink-0 mt-0.5 ${
                             finding.severity === 'problem'
-                              ? 'bg-rose-950/60 text-rose-300 border-rose-900'
-                              : 'bg-slate-900 text-slate-400 border-slate-800'
+                              ? 'text-rose-200/90 border-rose-500/25 bg-rose-500/[0.06]'
+                              : 'text-slate-500 border-slate-800 bg-slate-950/60'
                           }`}
                         >
                           {finding.severity === 'problem' ? t.map.rulesAuditProblemTag : t.map.rulesAuditNoteTag}
@@ -579,14 +689,18 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
             )}
 
             {/* Architecture / Rule Warnings */}
-            {compiledPrompt?.architectureWarnings && compiledPrompt.architectureWarnings.length > 0 && (
-              <div className="bg-amber-950/40 border border-amber-800/60 rounded-lg p-3 space-y-1">
-                <div className="flex items-center gap-1.5 text-amber-300 font-bold text-xs uppercase tracking-wider">
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+            {/*
+              A warning is a margin note, not a poster: a hairline on the left, the same slate the
+              rest of the page uses, and one amber mark to say this is the part to read.
+            */}
+            {!isCompiling && compiledPrompt?.architectureWarnings && compiledPrompt.architectureWarnings.length > 0 && (
+              <div className="border-l-2 border-amber-500/50 pl-3 py-0.5 space-y-1">
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-amber-200/90">
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400/80" />
                   <span>{t.compiler.safetyGuard}</span>
                 </div>
                 {compiledPrompt.architectureWarnings.map((w, i) => (
-                  <p key={i} className="text-xs text-slate-300">
+                  <p key={i} className="text-[11px] leading-relaxed text-slate-400">
                     • {w}
                   </p>
                 ))}
@@ -595,42 +709,45 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
 
             {/* Compiled Prompt Code Block */}
             {errorMsg && (
-              <div className="bg-rose-950/40 border border-rose-800/60 rounded-lg p-3 space-y-1">
-                <div className="flex items-center gap-1.5 text-rose-300 font-bold text-xs">
-                  <ShieldAlert className="w-3.5 h-3.5" />
+              <div className="border-l-2 border-rose-500/50 pl-3 py-0.5 space-y-1">
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-rose-200/90">
+                  <ShieldAlert className="w-3.5 h-3.5 text-rose-400/80" />
                   <span>{t.common.error}</span>
                 </div>
-                <p className="text-xs text-rose-200">{errorMsg}</p>
+                <p className="text-[11px] leading-relaxed text-slate-400">{errorMsg}</p>
               </div>
             )}
             {isOutdated && !isCompiling && (
-              <div className="bg-amber-950/40 border border-amber-800/60 rounded-lg px-3 py-2 text-[11px] text-amber-200 flex items-center gap-2">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <div className="border-l-2 border-amber-500/50 pl-3 py-0.5 text-[11px] text-slate-400 flex items-center gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400/70" />
                 <span>{t.compiler.outdatedNotice}</span>
               </div>
             )}
 
             {/*
-              Nothing compiled yet is a sentence, not a box.
-
-              The result used to be a tall bordered field holding one line of grey text, drawn
-              before there was anything to put in it — the largest empty surface on the screen, and
-              the one that made the compiler look like it had already failed. An empty result is a
-              line of caption where the prompt will appear; the field itself arrives with the prompt.
+              While the prompt is written, the run is the screen: the request's own facts, the model
+              as it is chosen, and the text it is producing right now — the same terminal the
+              beginner flow shows, with the same stop button. A spinner and one grey sentence said
+              only that something was happening.
             */}
-            {isCompiling || compiledPrompt ? (
-              <div className="relative bg-slate-950/70 rounded-xl p-4 font-mono text-xs text-slate-200 overflow-x-auto max-h-96 leading-relaxed whitespace-pre-wrap">
-                {isCompiling ? (
-                  <div className="flex items-center justify-center py-12 text-slate-400 gap-2">
-                    <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
-                    <span>{t.compiler.compilingNotice}</span>
-                  </div>
-                ) : (
-                  compiledPrompt?.promptText
-                )}
+            {isCompiling ? (
+              <RunTerminal
+                title={language === 'ru' ? 'Сборка промпта' : 'Building the prompt'}
+                waiting={language === 'ru' ? 'жду ответ модели' : 'waiting for the model'}
+                onCancel={cancelCompile}
+              />
+            ) : compiledPrompt ? (
+              <div className="relative bg-slate-950/70 border border-slate-800/70 rounded-xl p-4 font-mono text-[11.5px] text-slate-300 overflow-x-auto max-h-96 leading-relaxed whitespace-pre-wrap">
+                {compiledPrompt.promptText}
               </div>
+            ) : compileOutcome ? (
+              <RunTerminal
+                title={language === 'ru' ? 'Сборка промпта' : 'Building the prompt'}
+                waiting={language === 'ru' ? 'жду ответ модели' : 'waiting for the model'}
+                onRetry={handleCompile}
+              />
             ) : (
-              <p className="text-xs text-slate-400 max-w-sm">{t.compiler.startHint}</p>
+              <p className="text-xs text-slate-500 max-w-sm">{t.compiler.startHint}</p>
             )}
           </div>
         </div>
@@ -659,7 +776,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
                   }
                   title={simulatedResult.trim() ? t.compiler.reviewPastedCode : t.compiler.goToReview}
                   aria-label={simulatedResult.trim() ? t.compiler.reviewPastedCode : t.compiler.goToReview}
-                  className={buttonClass({ variant: 'primary', size: 'sm', iconOnly: true, className: 'shrink-0' })}
+                  className={buttonClass({ variant: 'secondary', size: 'sm', iconOnly: true, className: 'shrink-0' })}
                 >
                   <ArrowRight className="h-4 w-4" />
                 </button>
@@ -672,7 +789,7 @@ export const PromptCompiler: React.FC<PromptCompilerProps> = ({
               placeholder={t.compiler.simulatedResultPlaceholder}
               rows={3}
               aria-label={t.compiler.panel4Title}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 focus:border-indigo-500 font-mono placeholder:text-slate-400"
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 focus:border-slate-600 font-mono placeholder:text-slate-500"
             />
       </div>
     </div>

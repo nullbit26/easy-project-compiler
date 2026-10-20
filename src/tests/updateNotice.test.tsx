@@ -87,15 +87,55 @@ describe('the update line in the sidebar', () => {
     expect(screen.getByText(/42%/)).toBeInTheDocument();
   });
 
-  it('4. when the build is ready it says it waits for the next start, and offers a restart', async () => {
+  it('4. when the build is ready it names the version and offers the restart as one icon', async () => {
     const bridge = installBridge({ status: 'ready', version: '1.1.0', percent: 100 });
-    renderNotice();
+    const { container } = renderNotice();
 
-    expect(await screen.findByText(/Обновление готово/)).toBeInTheDocument();
-    expect(screen.getByText(/следующем запуске/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Перезапустить/ }));
+    expect(await screen.findByText('1.1.0')).toBeInTheDocument();
+    expect(screen.getByText(/готова/)).toBeInTheDocument();
+
+    /*
+     * The old card explained itself in a paragraph and asked for a full-width filled button. A
+     * status row is one line: the version, and one icon whose name is in its tooltip.
+     */
+    const row = container.querySelector('[data-update-notice="ready"]')!;
+    expect(row.querySelectorAll('p')).toHaveLength(1);
+    expect(row.querySelectorAll('button')).toHaveLength(1);
+    const restart = screen.getByRole('button', { name: 'Перезапустить и обновить' });
+    expect(restart.textContent).toBe('');
+    expect(restart.getAttribute('title')).toBe('Перезапустить и обновить');
+
+    fireEvent.click(restart);
     await waitFor(() => expect(bridge.install).toHaveBeenCalledTimes(1));
     expect(bridge.check).not.toHaveBeenCalled();
+  });
+
+  it('7. the state is light running around the row’s own edge, not a second control', async () => {
+    installBridge({ status: 'ready', version: '1.1.0', percent: 100 });
+    const { container } = renderNotice();
+
+    await screen.findByText('1.1.0');
+    /*
+     * The row used to carry a 5 × 5 field of tiles. The field took horizontal room from the version
+     * and read as a small unrelated glyph; the status is now the row's own border, which costs no
+     * width and cannot be mistaken for something pressable.
+     */
+    const row = container.querySelector('[data-update-notice="ready"]')!;
+    expect(row.getAttribute('data-update-runner')).toBe('emerald');
+    expect(row.className).toContain('epc-runner');
+    expect(container.querySelector('[data-update-tiles]')).toBeNull();
+    // The light itself is decoration; the row still says the version and the state in words.
+    expect(screen.getByText(/готова/)).toBeInTheDocument();
+  });
+
+  it('8. the download offer is an icon too, named for the screen reader', async () => {
+    const bridge = installBridge({ status: 'available', version: '1.3.1' });
+    renderNotice();
+
+    const download = await screen.findByRole('button', { name: 'Скачать обновление' });
+    expect(download.textContent).toBe('');
+    fireEvent.click(download);
+    await waitFor(() => expect(bridge.download).toHaveBeenCalledTimes(1));
   });
 
   it('5. a failed check is a quiet line with a retry, not an error box', async () => {

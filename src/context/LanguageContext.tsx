@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Language, translations, Translations } from '../i18n/translations';
+import { LANGUAGE_STORAGE_KEY, storedLanguage } from '../utils/uiLanguage';
 
 interface LanguageContextType {
   language: Language;
@@ -8,27 +9,19 @@ interface LanguageContextType {
   t: Translations;
 }
 
-const STORAGE_KEY = 'easy_project_compiler_lang';
-
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [language, setLanguageState] = useState<Language>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved === 'en' || saved === 'ru') {
-        return saved;
-      }
-    } catch {
-      // ignore
-    }
-    return 'ru';
-  });
+  /*
+   * The stored choice is read by a plain function, not here: the API layer needs the same language
+   * for the failures it writes before any screen sees them, and two readers of one key would drift.
+   */
+  const [language, setLanguageState] = useState<Language>(storedLanguage);
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
     try {
-      localStorage.setItem(STORAGE_KEY, lang);
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
     } catch {
       // ignore
     }
@@ -41,7 +34,7 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, language);
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
     } catch {
       // ignore
     }

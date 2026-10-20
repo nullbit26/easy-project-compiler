@@ -213,6 +213,18 @@ try {
   if (!report) throw new Error(`Самопроверка не оставила отчёт. Вывод:\n${run.log().slice(-2000)}`);
   for (const entry of report.checks) check(`self-test: ${entry.name}`, entry.ok, entry.detail);
 
+  /*
+   * The page opened without its own server is a scenario of its own, not a by-product: a check that
+   * quietly disappeared would leave the report green and the failure uncovered. Its checks all share
+   * the `no server:` prefix, so their presence is asked about here as well as their result above.
+   */
+  const noServerChecks = report.checks.filter((entry) => entry.name.startsWith('no server:'));
+  check(
+    'the build check covers an app opened without its server',
+    noServerChecks.length >= 3,
+    `${noServerChecks.length} check(s): ${noServerChecks.map((entry) => entry.name.slice(10)).join('; ')}`
+  );
+
   check(
     'it runs from the folder the tester started it in',
     report.facts.appDir === first.folder,

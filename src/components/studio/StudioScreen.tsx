@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Columns2,
   Columns3,
@@ -26,7 +27,9 @@ import { ChecksPane } from './ChecksPane';
 import { FilePane } from './FilePane';
 import { EditorPane } from './EditorPane';
 import { SplitLayout } from './SplitLayout';
+import { PaneActionsProvider } from './paneActions';
 import { IconButton } from '../ui/Button';
+import { TITLE_TOOLS_ID } from '../TitleBar';
 import {
   assignPanel,
   insertPane,
@@ -45,6 +48,11 @@ import {
 } from './studioLayout';
 
 interface StudioScreenProps {
+  /**
+   * False while the screen is kept mounted behind another one. Only the studio in front may put its
+   * window tools into the title bar; a hidden one would leave a toolbar for a screen nobody sees.
+   */
+  active?: boolean;
   project: ProjectState | null;
   onUpdateTaskStatus: (taskId: string, status: TaskStatus, nextAction?: string) => void;
   onUpdateTaskPositions: (positions: Record<string, { x: number; y: number }>) => void;
@@ -103,8 +111,16 @@ function readStoredLayout(): StudioState {
  * window asks what goes in it. Nothing is a tab and no arrangement has to be chosen in advance;
  * a window is closed from its own header. The tree, the panes' contents and the dragged dividers
  * are remembered between sessions.
+ *
+ * The window controls of the arrangement — add, the presets, reset — live in the app's title bar
+ * (`TITLE_TOOLS_ID`), not in a row of their own above the panes. They are this screen's tools and
+ * this screen keeps their state, but the title bar already exists at the top of the window, so the
+ * studio costs one header instead of two. Rendered without a title bar (a test, an older shell) or
+ * kept behind another screen, they fall back to the row they used to have inside this screen, so
+ * the controls are never lost and a hidden studio never leaves a toolbar in the window.
  */
 export const StudioScreen: React.FC<StudioScreenProps> = ({
+  active = true,
   project,
   onUpdateTaskStatus,
   onUpdateTaskPositions,
@@ -127,6 +143,12 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
   const [soloSlot, setSoloSlot] = useState<string | null>(null);
   const [menuSlot, setMenuSlot] = useState<string | null>(null);
   const [openFile, setOpenFile] = useState<string | null>(null);
+  /** Where the title bar accepts the studio's tools; null until it is in the document. */
+  const [toolsHost, setToolsHost] = useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    setToolsHost(active ? document.getElementById(TITLE_TOOLS_ID) : null);
+  }, [active]);
 
   const slots = useMemo(() => slotsOf(layout.tree), [layout.tree]);
 
@@ -226,9 +248,93 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
     [focusedSlot]
   );
 
-  /** The empty window's whole body: one choice, no captions. */
+  /**
+   * The window controls: what the window holds, whether it takes the screen, and whether it goes.
+   *
+   * They are handed to the panel, which draws them at the end of the header it already has (or, for
+   * a panel with no header, in a one-height row of its own). The pane itself draws no header: a
+   * label over a panel that labels itself was the matryoshka — a titled tab inside a titled tab.
+   */
+  const paneActionsFor = (slot: string): React.ReactNode => {
+    const panel = layout.panels[slot];
+    const empty = panel === 'empty';
+    const solo = soloSlot === slot;
+    return (
+      <div className="flex shrink-0 items-center gap-0.5" data-testid={`studio-pane-actions-${slot}`}>
+        {!empty && (
+          <div className="relative" data-studio-pane-menu>
+            <IconButton
+              label={ru ? 'Сменить окно' : 'Change the window'}
+              icon={PanelsTopLeft}
+              size="xs"
+              pressed={menuSlot === slot}
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuSlot((current) => (current === slot ? null : slot));
+              }}
+            />
+            {menuSlot === slot && (
+              <div
+                role="menu"
+                className="absolute right-0 top-8 z-40 w-40 rounded-lg border border-slate-700 bg-slate-900 p-1 shadow-2xl shadow-black/60"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {STUDIO_PANELS.map((option) => {
+                  const optionMeta = PANEL_META[option];
+                  const OptionIcon = optionMeta.icon;
+                  const active = panel === option;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={active}
+                      title={ru ? optionMeta.ru : optionMeta.en}
+                      onClick={() => setPanel(slot, option)}
+                      className={`flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] transition-colors ${
+                        active
+                          ? 'bg-slate-800 text-slate-100'
+                          : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
+                      }`}
+                    >
+                      <OptionIcon className="h-3.5 w-3.5 shrink-0" />
+                      <span className="flex-1">{ru ? optionMeta.ru : optionMeta.en}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+        {!empty && (
+          <IconButton
+            label={solo ? (ru ? 'Вернуть раскладку' : 'Restore the layout') : ru ? 'Развернуть окно' : 'Maximise the window'}
+            icon={solo ? Minimize2 : Maximize2}
+            size="xs"
+            onClick={() => setSoloSlot(solo ? null : slot)}
+          />
+        )}
+        {slots.length > 1 && (
+          <IconButton
+            label={ru ? 'Закрыть окно' : 'Close the window'}
+            icon={X}
+            size="xs"
+            onClick={() => closePane(slot)}
+          />
+        )}
+      </div>
+    );
+  };
+
+  /** The empty window's whole body: one choice, no captions, and just the control that closes it. */
   const renderPicker = (slot: string) => (
-    <div className="flex h-full min-h-0 items-center justify-center overflow-auto p-2">
+    <div className="flex h-full min-h-0 flex-col">
+      {slots.length > 1 && (
+        <div className="flex h-8 shrink-0 items-center justify-end border-b border-slate-800/80 px-1">
+          {paneActionsFor(slot)}
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-2">
       {/* Wraps instead of overflowing: a window added to a narrow pane is still a chooser. */}
       <div className="flex max-w-[220px] flex-wrap justify-center gap-1">
         {STUDIO_PANELS.map((option) => {
@@ -250,6 +356,7 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
             </button>
           );
         })}
+      </div>
       </div>
     </div>
   );
@@ -295,94 +402,22 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
 
   const renderPane = (slot: string) => {
     const panel = layout.panels[slot];
-    const empty = panel === 'empty';
-    const meta = empty ? null : PANEL_META[panel];
-    const Icon = meta?.icon;
-    const solo = soloSlot === slot;
     return (
       <div
         data-testid={`studio-pane-${slot}`}
         data-panel={panel}
         onPointerDownCapture={() => setFocusedSlot(slot)}
-        className={`flex h-full min-h-0 w-full flex-col bg-slate-950 ${
-          focusedSlot === slot ? 'ring-1 ring-inset ring-slate-700/60' : ''
-        }`}
+        /*
+         * No focus ring. It was a 1 px box around the pane — drawn inside the studio's own border,
+         * on top of the toolbar's first row — and it read as one more frame around a window that is
+         * already a frame. Which window the plus acts on is the window the pointer last touched;
+         * that does not need to be painted as a border the user has to look past.
+         */
+        className="flex h-full min-h-0 w-full flex-col bg-slate-950"
       >
-        <div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-slate-800/80 bg-slate-900/60 pl-2 pr-1">
-          {Icon && meta && (
-            <>
-              <Icon className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-              <span className="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">
-                {ru ? meta.ru : meta.en}
-              </span>
-            </>
-          )}
-          <div className="ml-auto flex items-center gap-0.5">
-            {!empty && (
-              <div className="relative" data-studio-pane-menu>
-                <IconButton
-                  label={ru ? 'Сменить окно' : 'Change the window'}
-                  icon={PanelsTopLeft}
-                  size="xs"
-                  pressed={menuSlot === slot}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuSlot((current) => (current === slot ? null : slot));
-                  }}
-                />
-                {menuSlot === slot && (
-                  <div
-                    role="menu"
-                    className="absolute right-0 top-8 z-40 w-40 rounded-lg border border-slate-700 bg-slate-900 p-1 shadow-2xl shadow-black/60"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    {STUDIO_PANELS.map((option) => {
-                      const optionMeta = PANEL_META[option];
-                      const OptionIcon = optionMeta.icon;
-                      const active = panel === option;
-                      return (
-                        <button
-                          key={option}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={active}
-                          title={ru ? optionMeta.ru : optionMeta.en}
-                          onClick={() => setPanel(slot, option)}
-                          className={`flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] transition-colors ${
-                            active
-                              ? 'bg-slate-800 text-slate-100'
-                              : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
-                          }`}
-                        >
-                          <OptionIcon className="h-3.5 w-3.5 shrink-0" />
-                          <span className="flex-1">{ru ? optionMeta.ru : optionMeta.en}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-            {!empty && (
-              <IconButton
-                label={solo ? (ru ? 'Вернуть раскладку' : 'Restore the layout') : ru ? 'Развернуть окно' : 'Maximise the window'}
-                icon={solo ? Minimize2 : Maximize2}
-                size="xs"
-                onClick={() => setSoloSlot(solo ? null : slot)}
-              />
-            )}
-            {slots.length > 1 && (
-              <IconButton
-                label={ru ? 'Закрыть окно' : 'Close the window'}
-                icon={X}
-                size="xs"
-                onClick={() => closePane(slot)}
-              />
-            )}
-          </div>
+        <div className="min-h-0 flex-1">
+          <PaneActionsProvider value={paneActionsFor(slot)}>{contentFor(slot)}</PaneActionsProvider>
         </div>
-
-        <div className="min-h-0 flex-1">{contentFor(slot)}</div>
       </div>
     );
   };
@@ -416,43 +451,61 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
     );
   }
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-1">
+  /*
+    The tools are one group: adding a window, then the arrangements, then the reset. The hairline
+    separates the two kinds of action without a heading, and every control keeps its tooltip and its
+    accessible name.
+  */
+  const layoutTools = (
+    <div data-testid="studio-tools" className="flex min-w-0 items-center gap-1">
+      <IconButton
+        label={ru ? 'Новое окно справа' : 'New window to the right'}
+        icon={Plus}
+        size="sm"
+        onClick={() => addPane('row')}
+        disabled={slots.length >= MAX_PANES}
+      />
+      <IconButton
+        label={ru ? 'Новое окно снизу' : 'New window below'}
+        icon={PanelBottom}
+        size="sm"
+        onClick={() => addPane('col')}
+        disabled={slots.length >= MAX_PANES}
+      />
+      <span className="mx-1 h-5 w-px shrink-0 bg-slate-800" />
+      {/* `studio` is what the reset button restores, so it is not a second button beside it. */}
+      {STUDIO_PRESETS.filter((preset) => preset !== 'studio').map((preset) => (
         <IconButton
-          label={ru ? 'Новое окно справа' : 'New window to the right'}
-          icon={Plus}
+          key={preset}
+          label={ru ? PRESET_META[preset].ru : PRESET_META[preset].en}
+          icon={PRESET_META[preset].icon}
           size="sm"
-          onClick={() => addPane('row')}
-          disabled={slots.length >= MAX_PANES}
+          onClick={() => applyPreset(preset)}
         />
-        <IconButton
-          label={ru ? 'Новое окно снизу' : 'New window below'}
-          icon={PanelBottom}
-          size="sm"
-          onClick={() => addPane('col')}
-          disabled={slots.length >= MAX_PANES}
-        />
-        <span className="mx-1 h-5 w-px bg-slate-800" />
-        {/* `studio` is what the reset button restores, so it is not a second button beside it. */}
-        {STUDIO_PRESETS.filter((preset) => preset !== 'studio').map((preset) => (
-          <IconButton
-            key={preset}
-            label={ru ? PRESET_META[preset].ru : PRESET_META[preset].en}
-            icon={PRESET_META[preset].icon}
-            size="sm"
-            onClick={() => applyPreset(preset)}
-          />
-        ))}
-        <IconButton
-          label={ru ? 'Сбросить раскладку' : 'Reset the layout'}
-          icon={RotateCcw}
-          size="sm"
-          onClick={resetLayout}
-        />
-      </div>
+      ))}
+      <IconButton
+        label={ru ? 'Сбросить раскладку' : 'Reset the layout'}
+        icon={RotateCcw}
+        size="sm"
+        onClick={resetLayout}
+      />
+    </div>
+  );
 
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {toolsHost ? createPortal(layoutTools, toolsHost) : (
+        <div className="flex flex-wrap items-center pb-2">{layoutTools}</div>
+      )}
+
+      {/*
+       * No frame around the split, and no gap between it and the window: the studio is not a box
+       * drawn inside the screen, it is the screen. A rounded, bordered container around the panes
+       * put one window inside another — the frame above the plan toolbar was the last matryoshka —
+       * and cost the board the inches its edges need. The panes themselves are the windows; the
+       * title bar above is the only chrome they share.
+       */}
+      <div data-testid="studio-split" className="relative min-h-0 flex-1 overflow-hidden bg-slate-950">
         {soloSlot ? (
           <div className="absolute inset-0 flex min-h-0 flex-col">{renderPane(soloSlot)}</div>
         ) : (

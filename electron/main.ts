@@ -23,6 +23,7 @@
  */
 import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell } from 'electron';
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import { createUpdater, EXE_NAME, readStagedUpdate, scheduleUpdateInstall, stagedUpdateVersion, Updater } from './updates';
 import { UpdateState } from '../src/utils/updateRules';
@@ -151,7 +152,18 @@ let profileDir = path.join(stateDir, 'app-data');
 let appStateFile = path.join(stateDir, 'app-state.json');
 let stateNextToApp = true;
 let profileNextToApp = true;
-const distDir = process.env.EPC_DIST_DIR || path.join(__dirname, 'dist');
+/**
+ * Where the web app is served from.
+ *
+ * A packaged build always uses its own resources folder. `EPC_DIST_DIR` is for running the shell
+ * from a checkout, and it can also arrive from the process that started this one: the portable
+ * launcher extracts every start into a new temporary folder, so a value inherited from a previous
+ * build points at a directory that no longer exists — the server answers 500 and the window opens
+ * black. Trusting the folder this build was started from is what keeps that impossible.
+ */
+const distDir = app.isPackaged
+  ? path.join(__dirname, 'dist')
+  : process.env.EPC_DIST_DIR || path.join(__dirname, 'dist');
 /**
  * The page's only way back into the shell: the window buttons of the app's own title bar.
  * It sits next to this file in every build (see tools/desktop/build-desktop.mjs).
@@ -614,6 +626,23 @@ function createWindow(url: string): BrowserWindow {
   });
   win.webContents.on('will-navigate', (event, target) => {
     if (!target.startsWith(ownOrigin)) event.preventDefault();
+  });
+
+  /*
+    A window with nothing in it is the worst failure this shell can show: no words, no way to tell
+    whether the app is starting or dead. If the app shell cannot be loaded, say so instead of
+    leaving a black rectangle on screen.
+  */
+  win.webContents.on('did-fail-load', (_event, code, description, failedUrl, isMainFrame) => {
+    if (!isMainFrame) return;
+    journal(`window: could not load ${failedUrl} (${code} ${description})`);
+    if (SELF_TEST_FILE) return;
+    win.show();
+    dialog.showErrorBox(
+      `${APP_NAME}: экран не загрузился`,
+      `Приложение запустилось, но окно не открылось (${code} ${description}).\n\n` +
+        'Закройте его и запустите файл снова. Данные в папке data не тронуты.'
+    );
   });
 
   void win.loadURL(url);
@@ -1537,6 +1566,128 @@ async function captureScreenshot(win: BrowserWindow, suffix = ''): Promise<strin
   }
 }
 
+/** The handful of file types the built web app is made of. Anything else is served as bytes. */
+const BARE_MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.txt': 'text/plain; charset=utf-8',
+  '.map': 'application/json; charset=utf-8'
+};
+
+/**
+ * A server with no API behind it, the way the page is opened while the interface is being built.
+ *
+ * It serves the built app and answers every unknown path with `index.html` — the single-page
+ * fallback of Vite, or of any static server. That is the shape of the failure this check is about:
+ * `/api/*` does not 404 in a way the page can notice; it returns the app's own HTML with a 200.
+ */
+function startBareServer(rootDir: string): Promise<{ url: string; close: () => Promise<void> }> {
+  const server = http.createServer((request, response) => {
+    let pathname = '/';
+    try {
+      pathname = decodeURIComponent(new URL(request.url || '/', 'http://127.0.0.1').pathname);
+    } catch {
+      /* a malformed address is answered with the shell, like any other path */
+    }
+    const candidate = path.join(rootDir, pathname);
+    const inside = candidate.startsWith(rootDir);
+    const isFile = inside && fs.existsSync(candidate) && fs.statSync(candidate).isFile();
+    const file = isFile ? candidate : path.join(rootDir, 'index.html');
+    response.setHeader('Content-Type', BARE_MIME[path.extname(file).toLowerCase()] || 'application/octet-stream');
+    response.end(fs.readFileSync(file));
+  });
+
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      resolve({
+        url: `http://127.0.0.1:${port}`,
+        close: () => new Promise<void>((done) => server.close(() => done()))
+      });
+    });
+  });
+}
+
+/**
+ * The app opened without its own server: what does the window say?
+ *
+ * This is the failure that used to be indistinguishable from a broken build: the page renders, the
+ * sidebar is there, and every screen that needs the folder answers with a transport status. The
+ * window has one place to say it once — the title bar — and the screen that was asked for has to
+ * say it in its own words, never with `Server error`.
+ */
+async function checkWithoutServer(): Promise<void> {
+  const bare = await startBareServer(distDir);
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    show: false,
+    backgroundColor: '#020617',
+    autoHideMenuBar: true,
+    frame: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+      // Without the bridge the launch animation would cover the window for the first seconds; the
+      // same switch the main window uses keeps it out of the way of what is being read.
+      additionalArguments: [SELF_TEST_SWITCH],
+      preload: fs.existsSync(preloadPath) ? preloadPath : undefined
+    }
+  });
+
+  try {
+    await win.loadURL(`${bare.url}/#/preview`);
+    const rendered = await waitForRender(win);
+    check('no server: the app still opens a screen', rendered, rendered ? '' : 'no children under #root');
+
+    const seen = await waitForValue<{ titleBar: string; says: boolean; raw: boolean; route: string }>(
+      win,
+      `(() => {
+        const status = document.querySelector('[data-testid="server-status"]');
+        const text = document.body.innerText || '';
+        if (!status) return null;
+        if (!text.includes('Сервер приложения не отвечает')) return null;
+        return {
+          titleBar: (status.textContent || '').trim(),
+          says: true,
+          raw: text.includes('Server error'),
+          route: location.hash
+        };
+      })()`,
+      30000
+    );
+
+    check(
+      'no server: the title bar says the app server is not answering',
+      seen?.titleBar === 'Сервер приложения не отвечает',
+      `the title bar said ${JSON.stringify(seen?.titleBar ?? null)}`
+    );
+    check(
+      'no server: the screen says the same and never the status text',
+      Boolean(seen) && seen!.says && !seen!.raw,
+      seen ? `route ${seen.route}, raw status text shown: ${seen.raw}` : 'no screen said it within 30 s'
+    );
+
+    report.facts.withoutServer = seen;
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+    await bare.close();
+  }
+}
+
 async function runSelfTest(win: BrowserWindow, url: string): Promise<void> {
   const rendered = await waitForRender(win);
   check('the app shell is rendered in the window', rendered, rendered ? '' : 'no children under #root');
@@ -1628,6 +1779,15 @@ async function runSelfTest(win: BrowserWindow, url: string): Promise<void> {
     check('the plan board can be worked on', false, (error as Error)?.message ?? String(error));
   }
 
+  // The page can be opened by a bare static server, and that is not a build nobody will see: it is
+  // how the interface is looked at while it is written. What matters is that the window says so in
+  // words a person can act on, on the title bar and on the screen that was asked for.
+  try {
+    await checkWithoutServer();
+  } catch (error) {
+    check('no server: the scenario could run', false, (error as Error)?.message ?? String(error));
+  }
+
   // Closing the only window must stop the app: that is what makes an old copy impossible to leave
   // running behind a newer one. The app's own close button has to do it, not just win.close().
   const closePressed = await win.webContents
@@ -1664,7 +1824,8 @@ function loadServerBundle(): ServerBundle {
   process.env.EPC_STATE_DIR = stateDir;
   // The packaged app never serves Vite's development middleware; it serves the built dist folder.
   process.env.NODE_ENV = 'production';
-  if (!process.env.EPC_DIST_DIR) process.env.EPC_DIST_DIR = distDir;
+  // Always this build's own answer: see `distDir` above for the inherited value this replaces.
+  process.env.EPC_DIST_DIR = distDir;
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require(serverPath);
 }

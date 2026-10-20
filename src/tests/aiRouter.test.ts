@@ -3,11 +3,13 @@ import os from 'os';
 import path from 'path';
 import { resetApiKeyStoreForTests } from '../../server/store/apiKeyStore';
 import {
+  anthropicStreamDelta,
   callAiJson,
   getLastAiProvider,
   getLastAiModel,
   getOrderedProviders,
   hasAiProvider,
+  openAiStreamDelta,
   testProviderKey
 } from '../../server/ai/aiProvider';
 
@@ -254,5 +256,118 @@ describe('AI provider router', () => {
     const test = await testProviderKey('nvidia');
     expect(test.ok).toBe(true);
     expect((fetchMock.mock.calls[0] as any)[0]).toBe('https://integrate.api.nvidia.com/v1/chat/completions');
+  });
+
+  it('10. Reads a streamed answer as it arrives, and still parses the whole of it', async () => {
+    process.env.OPENAI_API_KEY = OPENAI_KEY;
+    const pieces = ['{"ok":', 'true,', '"stack":"React"}'];
+    const frames =
+      pieces
+        .map((piece) => `data: ${JSON.stringify({ choices: [{ delta: { content: piece } }] })}\n\n`)
+        .join('') + 'data: [DONE]\n\n';
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        // Split inside a frame on purpose: the reader has to keep the unfinished tail.
+        controller.enqueue(encoder.encode(frames.slice(0, 40)));
+        controller.enqueue(encoder.encode(frames.slice(40)));
+        controller.close();
+      }
+    });
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'text/event-stream; charset=utf-8' },
+      body: stream
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const deltas: string[] = [];
+    const attempts: Array<[string, string | null]> = [];
+    const result = await callAiJson('answer', undefined, {
+      onDelta: (text) => deltas.push(text),
+      onAttempt: (provider, model) => attempts.push([provider, model])
+    });
+
+    expect(result).toEqual({ ok: true, stack: 'React' });
+    expect(deltas.join('')).toBe(pieces.join(''));
+    expect(attempts[0][0]).toBe('openai');
+    const [, init] = fetchMock.mock.calls[0] as any;
+    expect(JSON.parse(init.body).stream).toBe(true);
+  });
+
+  it('11. Starts no provider request when the reader already stopped the run', async () => {
+    process.env.OPENAI_API_KEY = OPENAI_KEY;
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+    controller.abort();
+
+    const deltas: string[] = [];
+    const result = await callAiJson('answer', undefined, {
+      onDelta: (text) => deltas.push(text),
+      signal: controller.signal
+    });
+
+    expect(result).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(deltas).toEqual([]);
+  });
+
+  it('12. Stops the fallback chain when the request is cancelled mid-answer', async () => {
+    process.env.OPENAI_API_KEY = OPENAI_KEY;
+    const fetchMock = vi.fn(
+      (_url: any, init: any) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener('abort', () =>
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+          );
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+
+    const pending = callAiJson('answer', undefined, { signal: controller.signal });
+    setTimeout(() => controller.abort(), 10);
+
+    await expect(pending).resolves.toBeNull();
+    // One request was started; a cancelled run does not walk on to the next model.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('13. asks again with the ceiling the account can afford, instead of losing the answer to a wallet', async () => {
+    process.env.OPENROUTER_API_KEY = OPENROUTER_KEY;
+    const bodies: any[] = [];
+    const fetchMock = vi.fn(async (_url: string, init: any) => {
+      bodies.push(JSON.parse(init.body));
+      if (bodies.length === 1) {
+        return jsonResponse(402, {
+          error: {
+            message:
+              'This request requires more credits, or fewer max_tokens. You requested up to 16000 tokens, but can only afford 5318.'
+          }
+        });
+      }
+      return jsonResponse(200, { choices: [{ message: { content: '{"ok":true}' } }] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await callAiJson('hello');
+
+    expect(result).toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // The second ask names a ceiling the host said the account can cover.
+    expect(bodies[1].max_tokens).toBeLessThanOrEqual(5062);
+    expect(bodies[1].max_tokens).toBeGreaterThanOrEqual(512);
+  });
+
+  it('14. Reads Anthropic stream frames without a network call', () => {
+    expect(
+      anthropicStreamDelta('{"type":"content_block_delta","delta":{"type":"text_delta","text":"При"}}')
+    ).toEqual({ text: 'При' });
+    expect(anthropicStreamDelta('{"type":"message_delta","delta":{"stop_reason":"max_tokens"}}')).toEqual({
+      truncated: true
+    });
+    expect(openAiStreamDelta('[DONE]')).toEqual({ done: true });
   });
 });

@@ -31,6 +31,22 @@ router.use((req, res, next) => {
  */
 let activeRunId: string | null = null;
 
+/**
+ * "No folder" is a state of the app, not a failed run, and both routes answer it before any work
+ * starts. The sentence follows the window that asked: the client sends `language`, and a Russian
+ * interface must not receive the loop's English fallback.
+ */
+function noWorkspace(req: Request, res: Response) {
+  const ru = !(req.body?.language && req.body.language !== 'ru');
+  return sendError(
+    res,
+    400,
+    'no_workspace',
+    ru ? 'Папка проекта не подключена.' : 'No project folder is connected.',
+    { reason: 'no_workspace' }
+  );
+}
+
 function taskFromRequest(req: Request): AutonomousTaskInput {
   const body = req.body || {};
   return {
@@ -55,9 +71,7 @@ function startHandler(req: Request, res: Response) {
   if (!task.taskTitle) {
     return sendError(res, 422, 'empty_task', 'The task has no title — nothing to run.');
   }
-  if (!getWorkspaceRoot()) {
-    return sendError(res, 400, 'no_workspace', 'No project folder is connected.');
-  }
+  if (!getWorkspaceRoot()) return noWorkspace(req, res);
   if (activeRunId) {
     return sendError(res, 409, 'run_in_progress', 'One autonomous run is already in progress.');
   }
@@ -84,9 +98,7 @@ function startHandler(req: Request, res: Response) {
  * The response returns immediately; progress goes over the same SSE stream.
  */
 function pipelineHandler(req: Request, res: Response) {
-  if (!getWorkspaceRoot()) {
-    return sendError(res, 400, 'no_workspace', 'No project folder is connected.');
-  }
+  if (!getWorkspaceRoot()) return noWorkspace(req, res);
   if (activeRunId) {
     return sendError(res, 409, 'run_in_progress', 'One autonomous run is already in progress.');
   }

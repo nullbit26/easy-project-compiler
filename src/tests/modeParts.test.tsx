@@ -227,21 +227,23 @@ describe('Working mode split into an interface and an autonomy', () => {
     expect(screen.queryByRole('button', { name: 'Когда меняется режим' })).toBeNull();
   });
 
-  it('offers a way out of the helper, which used to have none', async () => {
+  it('offers a way out of the helper in the sidebar, with no strip above the screen', async () => {
     openScreen(makeProject({ technicalLevel: 'Intermediate' }), '#/simple');
     await screen.findByText('Простой режим: шаг за шагом');
 
-    // The guided interface hides the pickers — including the one that would switch it back — and
-    // revealing the sections in the sidebar only reveals screens. This button is the door.
+    // The guided interface hides the pickers — including the one that would switch it back. The
+    // door is the sidebar's "show every section", which is where the sections already live: the
+    // top bar used to spend a full-width strip on one button for the same thing, and that strip is
+    // gone.
     expect(screen.queryByLabelText('Интерфейс')).toBeNull();
-    const openWorkspace = screen.getByRole('button', { name: 'Полный экран' });
+    expect(screen.queryByRole('button', { name: 'Полный экран' })).toBeNull();
 
-    fireEvent.click(openWorkspace);
+    fireEvent.click(screen.getByRole('button', { name: 'Показать все разделы' }));
 
     await waitFor(() => expect(savedProject().interfaceMode).toBe('full'));
     expect(savedProject().interfaceModeChosen).toBe(true);
-    // The helper is no longer the interface, so the door is gone and the full sections are open.
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Полный экран' })).toBeNull());
+    // Every section is open, so the way out is no longer offered — the switch reads "hide" now.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Показать все разделы' })).toBeNull());
   }, 20000);
 
   it('sends the autonomy with an AI request, whatever the interface is', async () => {

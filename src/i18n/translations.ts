@@ -377,8 +377,15 @@ export interface Translations {
     autoCodeRunning: string;
     autoCodeFailedNotice: string;
     autoCodeCompletedNotice: string;
+    autoCodeUnverifiedNotice: string;
     autoCodeNoAiKey: string;
     autoCodeRunInProgress: string;
+    /** The run never reached the model: there is nothing to say about checks yet. */
+    autoCodeStartFailed: string;
+    /** No folder is connected at all, so the loop has nowhere to write. */
+    autoCodeNoFolder: string;
+    /** The server is bound to another folder; writing here would touch the wrong project. */
+    autoCodeWrongFolder: string;
     statusLabel: string;
     tasksCount: string;
     addTaskModalTitle: string;
@@ -400,6 +407,8 @@ export interface Translations {
     minimapShow: string;
     minimapHide: string;
     minimapHint: string;
+    boardToolsShow: string;
+    boardToolsHide: string;
     laneReady: string;
     laneActive: string;
     laneBlocked: string;
@@ -669,11 +678,9 @@ export interface Translations {
    */
   update: {
     available: string;
-    willDownload: string;
     download: string;
     downloading: string;
     ready: string;
-    readyHint: string;
     restart: string;
     failed: string;
     retry: string;
@@ -1048,10 +1055,14 @@ export const translations: Record<Language, Translations> = {
       autoCodeButton: 'Авто',
       autoCodeAllButton: 'Авто: весь план по очереди',
       autoCodeRunning: 'ИИ пишет код сам',
-      autoCodeFailedNotice: 'Проверки не прошли — последняя запись откатить не удалась, откатите в разделе файлов.',
+      autoCodeFailedNotice: 'Авто-режим остановился — причина в логе, откат в разделе файлов.',
       autoCodeCompletedNotice: 'Готово: код записан, проверки прошли.',
+      autoCodeUnverifiedNotice: 'Записано, но проверок нет — результат не подтверждён.',
       autoCodeNoAiKey: 'Сначала настройте ключ AI-провайдера.',
       autoCodeRunInProgress: 'Авто-режим уже занят одной задачей.',
+      autoCodeStartFailed: 'Авто-режим не запустился.',
+      autoCodeNoFolder: 'У этого проекта нет подключённой папки — авто-режиму некуда писать. Подключите папку на экране «Файлы проекта».',
+      autoCodeWrongFolder: 'Подключена другая папка. Авто-режим пишет только в папку проекта — подключите её на экране «Файлы проекта».',
       statusLabel: 'Статус задачи',
       tasksCount: 'задач',
       addTaskModalTitle: 'Новая задача',
@@ -1073,6 +1084,8 @@ export const translations: Record<Language, Translations> = {
       minimapShow: 'Развернуть обзор',
       minimapHide: 'Свернуть обзор',
       minimapHint: 'Нажмите на обзор, чтобы перейти к этому месту.',
+      boardToolsShow: 'Инструменты плана',
+      boardToolsHide: 'Скрыть инструменты',
       laneReady: 'Готово к работе',
       laneActive: 'В работе и на проверке',
       laneBlocked: 'Заблокировано',
@@ -1338,12 +1351,10 @@ export const translations: Record<Language, Translations> = {
       retry: 'Повторить'
     },
     update: {
-      available: 'Вышла версия',
-      willDownload: 'Если не нажать «Скачать», начнётся фоновая загрузка — и обновится при следующем запуске.',
-      download: 'Скачать',
-      downloading: 'Загружаю обновление',
-      ready: 'Обновление готово:',
-      readyHint: 'Встанет само при следующем запуске. Можно перезапустить сейчас.',
+      available: 'доступна',
+      download: 'Скачать обновление',
+      downloading: 'загружается',
+      ready: 'готова',
       restart: 'Перезапустить и обновить',
       failed: 'Не удалось проверить обновления',
       retry: 'Повторить'
@@ -1715,10 +1726,14 @@ export const translations: Record<Language, Translations> = {
       autoCodeButton: 'Auto',
       autoCodeAllButton: 'Auto: the whole plan in turn',
       autoCodeRunning: 'AI is coding on its own',
-      autoCodeFailedNotice: 'The checks failed — the last write could not be rolled back automatically; undo it in the files section.',
+      autoCodeFailedNotice: 'The run stopped — the reason is in the log; undo it in the files section.',
       autoCodeCompletedNotice: 'Done: the code is written and every check passed.',
+      autoCodeUnverifiedNotice: 'Written, but the project has no checks — the result is unconfirmed.',
       autoCodeNoAiKey: 'Configure an AI provider key first.',
       autoCodeRunInProgress: 'The Auto run is already working on one task.',
+      autoCodeStartFailed: 'The Auto run could not start.',
+      autoCodeNoFolder: 'This project has no connected folder, so the Auto run has nowhere to write. Connect it on the Project Files screen.',
+      autoCodeWrongFolder: 'A different folder is connected. The Auto run writes only into this project\u2019s folder — connect it on the Project Files screen.',
       statusLabel: 'Task status',
       tasksCount: 'tasks',
       addTaskModalTitle: 'New Task',
@@ -1740,6 +1755,8 @@ export const translations: Record<Language, Translations> = {
       minimapShow: 'Expand the overview',
       minimapHide: 'Collapse the overview',
       minimapHint: 'Click the overview to jump to that spot.',
+      boardToolsShow: 'Plan tools',
+      boardToolsHide: 'Hide the tools',
       laneReady: 'Ready',
       laneActive: 'In progress & review',
       laneBlocked: 'Blocked',
@@ -2003,12 +2020,10 @@ export const translations: Record<Language, Translations> = {
       retry: 'Retry'
     },
     update: {
-      available: 'Version available',
-      willDownload: 'If you do not press Download, it is fetched in the background and applied at the next start.',
-      download: 'Download',
-      downloading: 'Downloading update',
-      ready: 'Update ready:',
-      readyHint: 'It is applied at the next start. You can restart now instead.',
+      available: 'is available',
+      download: 'Download update',
+      downloading: 'downloading',
+      ready: 'is ready',
       restart: 'Restart and update',
       failed: 'Could not check for updates',
       retry: 'Retry'

@@ -457,6 +457,27 @@ describe('Dependency lines on the board', () => {
     expect(screen.getByTestId('plan-links')).toBeTruthy();
   });
 
+  it('18b. keeps the tools row to icons, and folds it away to one button', () => {
+    renderBoard(linkedProject());
+
+    // The link toggle is the icon alone: the word is the tooltip and the accessible name.
+    const toggle = screen.getByTestId('plan-links-toggle');
+    expect(toggle.textContent).toBe('');
+    expect(toggle.getAttribute('aria-label')).toMatch(/^Связи · \d+$/);
+
+    fireEvent.click(screen.getByTestId('canvas-tools-close'));
+
+    // Closed means one small button, not a lost set of controls.
+    expect(screen.queryByTestId('plan-links-toggle')).toBeNull();
+    expect(screen.queryByTestId('canvas-zoom-readout')).toBeNull();
+    // The lines are a property of the plan, so dismissing the tools does not hide them.
+    expect(screen.getByTestId('plan-links')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('canvas-tools-open'));
+    expect(screen.getByTestId('plan-links-toggle')).toBeTruthy();
+    expect(screen.getByTestId('canvas-zoom-readout')).toBeTruthy();
+  });
+
   it('19. marks what is waiting and what can be picked up today', () => {
     renderBoard(linkedProject());
 

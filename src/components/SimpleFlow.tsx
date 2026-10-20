@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CompiledPrompt,
   ErrorDiagnosis,
@@ -16,7 +16,7 @@ import {
   WorkspaceState,
   applyFileChangesApi,
   bindWorkspaceApi,
-  compilePromptApi,
+  compilePromptStreamApi,
   diagnoseErrorApi,
   fetchWorkspaceApi,
   reviewSessionApi,
@@ -30,6 +30,15 @@ import {
   startSessionProgress,
   useSessionProgress
 } from '../services/sessionProgress';
+import {
+  beginRun,
+  finishRun,
+  pushRunDelta,
+  pushRunLine,
+  resetRunTrace,
+  useRunStream
+} from '../services/runStream';
+import { newCompileMarks } from '../utils/compileTrace';
 import { toCheckEvidence } from '../utils/checkEvidence';
 import { ProjectCheckStrip } from './ProjectCheckStrip';
 import { extractFilesFromAgentOutput } from '../utils/fileExtractor';
@@ -39,6 +48,7 @@ import { journeyName, journeySentence } from '../utils/journeySteps';
 import { useCopyFlash } from '../utils/copyText';
 import { buttonClass } from './ui/Button';
 import { HelpHint } from './ui/HelpHint';
+import { RunTerminal } from './RunTerminal';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -114,6 +124,14 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
   const [customTask, setCustomTask] = useState('');
   const [agent, setAgent] = useState<string>(project?.selectedAgent || 'DeepSeek / Web Chat');
   const [isCompiling, setIsCompiling] = useState(false);
+  /** The request log of the compile being run, so the screen can tell it apart from a review. */
+  const run = useRunStream();
+  /** The steps of the compiler answer already written into the log, so none is said twice. */
+  const seenCompileMarks = useRef<Set<string>>(new Set());
+  /** The compile in flight, so the terminal can stop it — and nothing else. */
+  const compileAbort = useRef<AbortController | null>(null);
+  /** The review in flight, for the same reason. */
+  const reviewAbort = useRef<AbortController | null>(null);
 
   const [compiled, setCompiled] = useState<CompiledPrompt | null>(null);
   const promptCopy = useCopyFlash(2500);
@@ -175,6 +193,22 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
   // Leaving the screen ends the run as far as the workspace is concerned: an indicator that keeps
   // blinking after the work is over is worse than no indicator at all.
   useEffect(() => finishSessionProgress, []);
+
+  /*
+   * The compiler's answer names its own steps as it writes them: a key that has appeared means the
+   * model is at that part of the answer. Those become plain lines in the log — "выбирает файлы для
+   * контекста", "пишет промпт" — so the wait reads as work being done rather than as a stream of
+   * JSON. Nothing is written for a step the answer has not reached.
+   */
+  useEffect(() => {
+    if (!run.trace) return;
+    const fresh = newCompileMarks(run.trace, seenCompileMarks.current);
+    if (!fresh.length) return;
+    for (const mark of fresh) {
+      seenCompileMarks.current.add(mark.key);
+      pushRunLine('muted', language === 'ru' ? mark.ru : mark.en);
+    }
+  }, [run.trace, language]);
 
   // The folder lives on the server, so the screen restores itself on every visit — and again
   // when another project is picked, because a new project may come with its own folder.
@@ -322,29 +356,101 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
 
   /* -------------------------------- step 2: task -------------------------------- */
 
+  /**
+   * Stops the request the terminal is showing.
+   *
+   * Aborting the fetch closes the response, and the server sees the close and stops asking the
+   * provider — so cancelling here is not just a hidden card over a request that keeps running.
+   */
+  const cancelCompile = () => {
+    if (!isCompiling) return;
+    compileAbort.current?.abort();
+  };
+
   const handleCompile = async () => {
     if (!project || !taskTitle.trim() || isCompiling || noFilesYet) return;
     setIsCompiling(true);
     setErrorMsg('');
+    const ru = language === 'ru';
+    const payload = {
+      userRequest: taskTitle.trim(),
+      taskTitle: taskTitle.trim(),
+      projectMap: project.projectMap,
+      brief: project.brief,
+      agent,
+      contextMode: 'Balanced' as const,
+      // The autonomy part shapes how the agent talks — never how strict the result has to be.
+      skillLevel: autonomyOf(project),
+      language
+    };
+    /*
+     * The form becomes a terminal before the request leaves.
+     *
+     * The lines are the request's own facts — the task, the agent it is addressed to, how much
+     * context travels with it and the endpoint it goes to — so the wait has something to read
+     * instead of a countdown. Everything after this point is written by the answer itself.
+     */
+    const startedAt = Date.now();
+    const bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
+    const controller = new AbortController();
+    compileAbort.current = controller;
+    seenCompileMarks.current = new Set();
+    beginRun({
+      kind: 'compile',
+      title: ru ? 'Сборка промпта' : 'Building the prompt',
+      lines: [
+        { label: ru ? 'Задача' : 'Task', text: payload.taskTitle },
+        { label: ru ? 'Агент' : 'Agent', text: agent },
+        {
+          tone: 'muted',
+          label: ru ? 'Контекст' : 'Context',
+          text: `${(project.projectMap?.files || []).length} ${ru ? 'файлов' : 'files'} · Balanced`
+        },
+        { label: ru ? 'Запрос' : 'Request', text: `POST /api/prompt/compile?stream=1 · ${formatBytes(bytes)}` }
+      ]
+    });
     try {
-      const result = await compilePromptApi({
-        userRequest: taskTitle.trim(),
-        taskTitle: taskTitle.trim(),
-        projectMap: project.projectMap,
-        brief: project.brief,
-        agent,
-        contextMode: 'Balanced',
-        // The autonomy part shapes how the agent talks — never how strict the result has to be.
-        skillLevel: autonomyOf(project),
-        language
+      /*
+       * The same compile, read while it is written. `onAttempt` is a provider or model being tried —
+       * the previous model's partial text is dropped with the model that abandoned it — and
+       * `onDelta` is the answer itself. A server or provider that does not stream answers with the
+       * plain envelope, and the call still returns the prompt.
+       */
+      const result = await compilePromptStreamApi(payload, {
+        onAttempt: (provider, model) => {
+          resetRunTrace();
+          pushRunLine('step', `${provider}${model ? ` / ${model}` : ''}`, {
+            label: ru ? 'Модель' : 'Model'
+          });
+        },
+        onDelta: pushRunDelta,
+        signal: controller.signal
       });
+      const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+      pushRunLine('success', `200 OK · ${seconds} ${ru ? 'с' : 's'}`);
+      finishRun(
+        'success',
+        ru
+          ? `Промпт собран · ${result.promptText.length} симв. · ${result.acceptanceCriteria?.length ?? 0} критериев`
+          : `Prompt built · ${result.promptText.length} chars · ${result.acceptanceCriteria?.length ?? 0} criteria`
+      );
       setCompiled(result);
       // A new prompt is a new thing to copy: the previous answer must not stand over it.
       promptCopy.reset();
       goToStep(3);
     } catch (err: any) {
-      setErrorMsg(err?.userMessage || err?.message || (language === 'ru' ? 'Не удалось собрать промпт.' : 'Could not build the prompt.'));
+      // A cancelled request is not a failure: nothing went wrong, the reader stopped it.
+      if (controller.signal.aborted) {
+        finishRun('cancelled', ru ? 'Отменено · запрос остановлен' : 'Cancelled · the request was stopped');
+        setErrorMsg('');
+        return;
+      }
+      const message =
+        err?.userMessage || err?.message || (ru ? 'Не удалось собрать промпт.' : 'Could not build the prompt.');
+      finishRun('error', `${ru ? 'Ошибка' : 'Failed'} · ${message}`);
+      setErrorMsg(message);
     } finally {
+      if (compileAbort.current === controller) compileAbort.current = null;
       setIsCompiling(false);
     }
   };
@@ -381,11 +487,40 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
     };
   }, [activeTask, project, taskTitle, language]);
 
+  /**
+   * Stops the verdict being written. The answer stays in its field, so asking again costs one click.
+   */
+  const cancelReview = () => {
+    if (!isReviewing) return;
+    reviewAbort.current?.abort();
+  };
+
   const handleReview = async () => {
     if (!project || !reviewTask || !answer.trim() || isReviewing) return;
     setIsReviewing(true);
     setErrorMsg('');
     setApplyResult(null);
+    const ru = language === 'ru';
+    const controller = new AbortController();
+    reviewAbort.current = controller;
+    /*
+     * The same terminal, for the other half of the loop: what was handed over, how much of it, and
+     * the endpoint that judges it. The answer stays on the screen underneath — this replaces the
+     * card's body only while the verdict is being written.
+     */
+    const reviewStartedAt = Date.now();
+    beginRun({
+      kind: 'review',
+      title: ru ? 'Проверка ответа' : 'Checking the answer',
+      lines: [
+        { label: ru ? 'Задача' : 'Task', text: reviewTask.title },
+        { tone: 'muted', label: ru ? 'Попытка' : 'Attempt', text: String(attempts.length + 1) },
+        {
+          label: ru ? 'Запрос' : 'Request',
+          text: `POST /api/session/review · ${formatBytes(new TextEncoder().encode(answer.trim()).length)}`
+        }
+      ]
+    });
     // The run is open to the rest of the workspace for as long as it takes: the sidebar says which
     // task is being judged and how many attempts it has had.
     startSessionProgress({
@@ -409,7 +544,15 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
         // Step 4 is where the beginner reads the verdict, so its wording follows the mode too.
         skillLevel: autonomyOf(project),
         language
-      });
+      }, { signal: controller.signal });
+      const reviewSeconds = ((Date.now() - reviewStartedAt) / 1000).toFixed(1);
+      pushRunLine('success', `200 OK · ${reviewSeconds} ${ru ? 'с' : 's'}`);
+      finishRun(
+        'success',
+        ru
+          ? `Вердикт · готовность ${result.progressPercent}% · ${result.status}`
+          : `Verdict · ${result.progressPercent}% done · ${result.status}`
+      );
       setReview(result);
       continuationCopy.reset();
 
@@ -435,8 +578,18 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
         );
       }
     } catch (err: any) {
-      setErrorMsg(err?.userMessage || err?.message || (language === 'ru' ? 'Не удалось проверить ответ.' : 'Could not check the answer.'));
+      // Stopped on purpose: no verdict, no error, and the answer is still in its field.
+      if (controller.signal.aborted) {
+        finishRun('cancelled', ru ? 'Отменено · запрос остановлен' : 'Cancelled · the request was stopped');
+        setErrorMsg('');
+        return;
+      }
+      const message =
+        err?.userMessage || err?.message || (ru ? 'Не удалось проверить ответ.' : 'Could not check the answer.');
+      finishRun('error', `${ru ? 'Ошибка' : 'Failed'} · ${message}`);
+      setErrorMsg(message);
     } finally {
+      if (reviewAbort.current === controller) reviewAbort.current = null;
       setIsReviewing(false);
       finishSessionProgress();
     }
@@ -654,6 +807,29 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
       : { label: s.verdictFailed, emoji: '❌', tone: 'rose' as const }
     : null;
 
+  /*
+   * Where the sign of a run lives.
+   *
+   * The moving light is on the sidebar entry that leads to this screen (`Sidebar.tsx`), not on the
+   * step card: the card is the thing being filled in, and the entry is the place the reader already
+   * looks to find out whether the helper is working. The card keeps `aria-busy`, so a screen reader
+   * still hears the state where the work happens.
+   */
+  const stepRunning = isCompiling || isReviewing || session.active;
+  const compileTitle = language === 'ru' ? 'Сборка промпта' : 'Building the prompt';
+  const reviewTitle = language === 'ru' ? 'Проверка ответа' : 'Checking the answer';
+  const waitingForModel = language === 'ru' ? 'жду ответ модели' : 'waiting for the model';
+  /* A stopped run keeps its log above the form too: it is what the reader was looking at. */
+  const compileStopped =
+    !isCompiling && run.kind === 'compile' && (run.outcome === 'error' || run.outcome === 'cancelled');
+  const reviewStopped =
+    !isReviewing && run.kind === 'review' && (run.outcome === 'error' || run.outcome === 'cancelled');
+  const stepCard = (padding: string) => `bg-slate-900 border border-slate-800 rounded-2xl ${padding}`;
+  const stepCardProps = {
+    'data-simple-running': stepRunning ? 'true' : 'false',
+    'aria-busy': stepRunning || undefined
+  } as const;
+
   return (
     <div className="space-y-6 short:space-y-3 max-w-3xl mx-auto">
       {/*
@@ -732,7 +908,7 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
 
       {/* -------------------------------- STEP 1 -------------------------------- */}
       {step === 1 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 short:p-4 space-y-4">
+        <div {...stepCardProps} className={stepCard('p-5 short:p-4 space-y-4')}>
           <div>
             <h3 className="text-base font-bold text-white">{journeySentence('folder', t, s.folderTitle)}</h3>
             <p className="text-xs text-slate-400 mt-1">{s.folderHelp}</p>
@@ -827,11 +1003,28 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
 
       {/* -------------------------------- STEP 2 -------------------------------- */}
       {step === 2 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div {...stepCardProps} className={stepCard('p-5 space-y-4')}>
           <div>
             <h3 className="text-base font-bold text-white">{journeySentence('task', t, s.taskTitle)}</h3>
             <p className="text-xs text-slate-400 mt-1">{s.taskHelp}</p>
           </div>
+
+          {/*
+            The request takes the screen the moment it starts.
+
+            The form is what the reader was doing; once the prompt is asked for, the thing being
+            done is the request itself, so the form's place is taken by its log — not covered by a
+            floating card in the corner, and not left beside a silent button. A failed run leaves
+            its log on the card above the form, because that log is the only place the reason is
+            written down.
+          */}
+          {isCompiling ? (
+            <RunTerminal title={compileTitle} waiting={waitingForModel} onCancel={cancelCompile} />
+          ) : (
+            <>
+          {compileStopped && (
+            <RunTerminal title={compileTitle} waiting={waitingForModel} onRetry={handleCompile} />
+          )}
 
           {/* No prompt can be written for a folder with no files in it, so the blocker is said
               before the task is picked rather than after the button refuses to work. */}
@@ -907,20 +1100,22 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
             </button>
             <button
               onClick={handleCompile}
-              disabled={!taskTitle.trim() || isCompiling || noFilesYet}
+              disabled={!taskTitle.trim() || noFilesYet}
               title={noFilesYet ? s.noFilesTitle : undefined}
               className={buttonClass({ variant: 'primary', size: 'md' })}
             >
-              {isCompiling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              <span>{isCompiling ? (language === 'ru' ? 'Собираем промпт…' : 'Building the prompt…') : s.compileButton}</span>
+              <Sparkles className="w-4 h-4" />
+              <span>{s.compileButton}</span>
             </button>
           </div>
+            </>
+          )}
         </div>
       )}
 
       {/* -------------------------------- STEP 3 -------------------------------- */}
       {step === 3 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div {...stepCardProps} className={stepCard('p-5 space-y-4')}>
           <div>
             <h3 className="text-base font-bold text-white">{journeySentence('prompt', t, s.promptTitle)}</h3>
             <p className="text-xs text-slate-400 mt-1">{s.promptHelp}</p>
@@ -977,12 +1172,20 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
       {/* -------------------------------- STEP 4 -------------------------------- */}
       {step === 4 && (
         <div className="space-y-5">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+          <div {...stepCardProps} className={stepCard('p-5 space-y-4')}>
             <div>
               <h3 className="text-base font-bold text-white">{journeySentence('check', t, s.answerTitle)}</h3>
               <p className="text-xs text-slate-400 mt-1">{s.answerHelp}</p>
             </div>
 
+            {/* The same takeover as step 2: while the verdict is written, the log is the screen. */}
+            {isReviewing ? (
+              <RunTerminal title={reviewTitle} waiting={waitingForModel} onCancel={cancelReview} />
+            ) : (
+              <>
+            {reviewStopped && (
+              <RunTerminal title={reviewTitle} waiting={waitingForModel} onRetry={handleReview} />
+            )}
             {/*
               The answer field holds an answer, so an empty one is a short field, not a page: four
               rows say "this is where the answer goes", and the field grows once there is something
@@ -1040,11 +1243,13 @@ export const SimpleFlow: React.FC<SimpleFlowProps> = ({
                   disabled={!answer.trim() || isReviewing}
                   className={buttonClass({ variant: 'success', size: 'md' })}
                 >
-                  {isReviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                  <span>{isReviewing ? s.checking : s.checkButton}</span>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{s.checkButton}</span>
                 </button>
               </div>
             </div>
+              </>
+            )}
 
             {/* Honest about the one thing that can make a verdict thinner: a check run that has
                 not answered yet, so the reviewer has no measured facts to judge with. */}

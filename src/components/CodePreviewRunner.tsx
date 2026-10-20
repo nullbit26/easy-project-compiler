@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ProjectState } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { buildSandboxDocument } from '../utils/sandboxDocument';
-import { ApiError, buildPreviewApi, PreviewBuild, PreviewDiagnostic } from '../services/api';
+import { previewBuildMessage } from '../utils/apiFailure';
+import { buildPreviewApi, PreviewBuild, PreviewDiagnostic } from '../services/api';
+import { useFolderRevision } from '../services/folderFeed';
 import { formatBytes } from '../utils/byteSize';
 import { useCopyFlash } from '../utils/copyText';
 import {
@@ -57,7 +59,12 @@ export const CodePreviewRunner: React.FC<CodePreviewRunnerProps> = ({
   const [mode, setMode] = useState<'project' | 'snippet'>('project');
   const [build, setBuild] = useState<PreviewBuild | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
-  const [buildMessage, setBuildMessage] = useState<string | null>(null);
+  /**
+   * The failure itself, not a sentence about it: the sentence is written from it at render time, so
+   * switching the interface language re-reads the same failure in the new one instead of leaving a
+   * message in the language the screen used a minute ago.
+   */
+  const [buildFailure, setBuildFailure] = useState<unknown>(null);
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
   const [logs, setLogs] = useState<Array<{ type: 'log' | 'error' | 'warn'; text: string; time: string }>>([]);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -77,6 +84,13 @@ export const CodePreviewRunner: React.FC<CodePreviewRunnerProps> = ({
   const [showRunSource, setShowRunSource] = useState(false);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  /** Files connected a different folder while this screen stayed open. */
+  const folderRevision = useFolderRevision();
+  /**
+   * Whether a build is running, as a ref: a build started after the folder settled has already read
+   * the new folder, so an announcement arriving mid-build needs no second one (see `PreviewPane`).
+   */
+  const buildingRef = useRef(false);
   /** True while the keyboard is inside the preview frame (see the effect that watches for it). */
   const [frameHoldsKeyboard, setFrameHoldsKeyboard] = useState(false);
 
@@ -97,8 +111,9 @@ export const CodePreviewRunner: React.FC<CodePreviewRunnerProps> = ({
   }, [initialSnippet]);
 
   const runBuild = async (entry?: string | null) => {
+    buildingRef.current = true;
     setIsBuilding(true);
-    setBuildMessage(null);
+    setBuildFailure(null);
     try {
       const result = await buildPreviewApi({ entry: entry ?? selectedEntry, language });
       setBuild(result);
@@ -108,24 +123,22 @@ export const CodePreviewRunner: React.FC<CodePreviewRunnerProps> = ({
       setRuntimeError(null);
     } catch (error: any) {
       setBuild(null);
-      setBuildMessage(
-        error instanceof ApiError
-          ? error.userMessage
-          : ru
-          ? 'Не удалось собрать проект.'
-          : 'The project could not be built.'
-      );
+      setBuildFailure(error);
     } finally {
+      buildingRef.current = false;
       setIsBuilding(false);
     }
   };
 
   // The screen runs the connected folder, so it builds as soon as there is one — a project in the
-  // app is not required for that (see the note in the right column).
+  // app is not required for that (see the note in the right column). A folder connected on another
+  // screen while this one stayed open is a new thing to run, so it builds again; the entry is asked
+  // of the server again because the new folder's entry point may be a different file.
   useEffect(() => {
+    if (buildingRef.current) return;
     void runBuild(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.id, mode]);
+  }, [project?.id, mode, folderRevision]);
 
   /*
     The one element the browser gives no focus state to.
@@ -169,6 +182,7 @@ export const CodePreviewRunner: React.FC<CodePreviewRunnerProps> = ({
   }, []);
 
   const diagnostics: PreviewDiagnostic[] = build?.diagnostics || [];
+  const buildMessage = buildFailure ? previewBuildMessage(buildFailure, language) : null;
   const hasFolder = Boolean(build?.root) && !buildMessage;
   const projectHtml = build?.ok && build.html ? build.html : null;
   // The project is normally served from its own loopback origin: the browser then loads the folder's

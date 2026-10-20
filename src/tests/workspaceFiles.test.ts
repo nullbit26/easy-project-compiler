@@ -171,6 +171,29 @@ describe('Applying AI changes and undoing them', () => {
   });
 });
 
+describe('One folder, more than one process', () => {
+  /*
+   * The desktop window serves the API itself, but the folder is decided once for the app, and the
+   * file on disk is where it is remembered. Another window or a dev server can bind it while this
+   * one is already running; reading the file once at boot left the running server answering
+   * "no folder" while the Files screen and the Auto run needed the opposite.
+   */
+  it('sees a folder connected by another process, and its removal', () => {
+    const file = process.env.EPC_WORKSPACE_FILE as string;
+    expect(getWorkspaceRoot()).toBeNull();
+
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, root: projectRoot, updatedAt: new Date().toISOString() }),
+      'utf8'
+    );
+    expect(getWorkspaceRoot()).toBe(path.resolve(projectRoot));
+
+    fs.writeFileSync(file, JSON.stringify({ version: 1, root: null, updatedAt: new Date().toISOString() }), 'utf8');
+    expect(getWorkspaceRoot()).toBeNull();
+  });
+});
+
 describe('App runtime data folder', () => {
   it('13. keeps backups inside data/ and out of the project\'s lint and test scope', () => {
     // A real run has no override, so this is the folder the app would write the user's project

@@ -186,6 +186,32 @@ describe('The autonomous loop', () => {
     expect(result.backupId).toBe('bk-1');
   });
 
+  it('keeps the batch and stops on the first answer when the project has no checks', async () => {
+    // A project with no checks used to be read as four failed checks: each retry rolled the last
+    // batch back and the log said «Проверки не настроены» and «Проверки не прошли» in turn.
+    await stubInternals({ verify: 'pass' });
+    const checks = await import('../../server/services/projectChecks');
+    vi.spyOn(checks, 'runVerification').mockImplementation(
+      async () => ({ ranAt: 'now', ok: true, passed: 0, failed: 0, problems: [], results: [] } as any)
+    );
+
+    const seen: any[] = [];
+    const off = autonomousLog.subscribe((e) => seen.push(e));
+    const result = await runAutonomousTask(task);
+    off();
+
+    expect(result.status).toBe('completed');
+    expect(result.verdict).toBe('none');
+    expect(result.attempts).toBe(1);
+    expect(undoFileChanges).not.toHaveBeenCalled();
+    expect(applyFileChanges).toHaveBeenCalledTimes(1);
+
+    const completed = seen.find((e) => e.type === 'run_completed');
+    expect(completed?.text).toContain('no checks');
+    expect(seen.some((e) => e.type === 'attempt_failed')).toBe(false);
+    expect(completed?.text).not.toContain('every check passed');
+  });
+
   it('recovers from a model answer with no changes and keeps the loop alive', async () => {
     const ai = await import('../../server/ai/aiProvider');
     await stubInternals({ verify: 'pass' });

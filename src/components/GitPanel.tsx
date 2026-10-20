@@ -16,7 +16,8 @@ import {
   ShieldAlert,
   Sparkles
 } from 'lucide-react';
-import { Button } from './ui/Button';
+import { Button, IconButton } from './ui/Button';
+import { HelpHint } from './ui/HelpHint';
 import {
   GitBranchDiff,
   GitBranches,
@@ -32,6 +33,7 @@ import {
   fetchGitDiffApi,
   fetchGitStatusApi
 } from '../services/api';
+import { useFolderRevision } from '../services/folderFeed';
 
 interface GitPanelProps {
   ru: boolean;
@@ -60,11 +62,13 @@ function stateLabel(state: GitFileState, ru: boolean): string {
   }
 }
 
+/* One hairline badge for every file state; the word carries the meaning, not a filled plate. */
 function stateStyle(state: GitFileState): string {
-  if (state === 'untracked' || state === 'added') return 'text-emerald-300 bg-emerald-950/60 border-emerald-800/60';
-  if (state === 'deleted') return 'text-rose-300 bg-rose-950/60 border-rose-800/60';
-  if (state === 'conflicted') return 'text-amber-300 bg-amber-950/60 border-amber-800/60';
-  return 'text-sky-300 bg-sky-950/60 border-sky-800/60';
+  const chip = 'border-slate-800/80 bg-slate-900/50';
+  if (state === 'untracked' || state === 'added') return `text-emerald-300/90 ${chip}`;
+  if (state === 'deleted') return `text-rose-300 ${chip}`;
+  if (state === 'conflicted') return `text-amber-300 ${chip}`;
+  return `text-sky-300/90 ${chip}`;
 }
 
 function stateIcon(state: GitFileState) {
@@ -191,6 +195,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
   const [compareBase, setCompareBase] = useState('');
   const [branchDiff, setBranchDiff] = useState<GitBranchDiff | null>(null);
   const [isBranchDiffLoading, setIsBranchDiffLoading] = useState(false);
+  /** The folder the server holds changed: this panel was reading the previous one. */
+  const folderRevision = useFolderRevision();
 
   const files = status?.files || [];
   const selectedFiles = useMemo(
@@ -252,6 +258,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
   };
 
   // A different folder, a freshly written file or a new commit all mean "read Git again".
+  // `folderRevision` is the folder being connected or disconnected on another screen, while this
+  // panel stays mounted: the branch and the changed files are re-read from the new folder.
   useEffect(() => {
     setCommitResult(null);
     setCommitError('');
@@ -263,7 +271,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
     setNewBranch(draftBranchName());
     loadStatus();
     loadBranches();
-  }, [root, refreshToken, language]);
+  }, [root, refreshToken, language, folderRevision]);
 
   const toggle = (path: string) => {
     setCommitResult(null);
@@ -373,38 +381,33 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
   return (
     /* A section of the screen's one surface, not a card on it. */
     <div className="space-y-3 border-t border-slate-800/70 pt-5">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider">
-            {ru ? 'Версии вашей работы' : 'Versions of your work'}
-          </span>
-          <h4 className="text-sm font-bold text-white flex items-center gap-2">
-            <GitBranch className="w-4 h-4 text-sky-400" />
-            <span>{ru ? 'Сохранение версий (Git)' : 'Saving versions (Git)'}</span>
-          </h4>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="flex min-w-0 items-center gap-2 text-sm font-bold text-white">
+          <GitBranch className="w-4 h-4 shrink-0 text-slate-500" />
+          <span className="truncate">{ru ? 'Сохранение версий' : 'Saving versions'}</span>
+          <HelpHint
+            text={
+              ru
+                ? 'Выбранные файлы сохраняются как версия у вас на компьютере. Отправки на GitHub здесь нет — наружу ничего не уходит.'
+                : 'The selected files are saved as a version on your own computer. There is no upload to GitHub here — nothing leaves your machine.'
+            }
+          />
+        </h4>
+        <div className="flex items-center gap-1.5 shrink-0">
           {status?.isRepo && status.branch && (
             <span className="text-[10px] font-bold px-2 py-1 rounded-lg border text-slate-300 bg-slate-950 border-slate-700 font-mono">
               {status.branch}
             </span>
           )}
-          <button
-            onClick={() => loadStatus(true)}
+          <IconButton
+            label={ru ? 'Обновить' : 'Refresh'}
+            icon={isLoading ? () => <Loader2 className="h-3.5 w-3.5 animate-spin" /> : RefreshCw}
+            size="xs"
             disabled={isLoading}
-            className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-slate-800/80 px-2.5 text-[11px] font-medium text-slate-200 ring-1 ring-inset ring-slate-700/80 transition-colors enabled:hover:bg-slate-700/80 enabled:hover:text-white disabled:pointer-events-none disabled:opacity-50"
-          >
-            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-            <span>{ru ? 'Обновить' : 'Refresh'}</span>
-          </button>
+            onClick={() => loadStatus(true)}
+          />
         </div>
       </div>
-
-      <p className="text-[11px] text-slate-400">
-        {ru
-          ? 'Программа сохраняет выбранные файлы как версию у вас на компьютере. Отправки на GitHub здесь нет — наружу ничего не уходит.'
-          : 'The app saves the selected files as a version on your own computer. There is no upload to GitHub here — nothing leaves your machine.'}
-      </p>
 
       {loadError && (
         <div className="bg-rose-950/50 border border-rose-800/60 rounded-xl p-2.5 text-[11px] text-rose-200">
@@ -424,21 +427,15 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
       )}
 
       {status?.available && !status.isRepo && (
-        <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-[11px]">
-          <div className="flex items-start gap-2 text-amber-200">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>
-              {ru
-                ? 'Эта папка пока не под Git, поэтому сохранять версии некуда.'
-                : 'This folder is not under Git yet, so there is nowhere to save versions.'}
-            </span>
-          </div>
-          <p className="text-slate-400">
-            {ru
-              ? 'Один раз включите учёт версий в этой папке — откройте терминал в папке проекта и выполните:'
-              : 'Turn version tracking on once in this folder — open a terminal in the project folder and run:'}
-          </p>
-          <code className="block bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 font-mono text-emerald-300">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400/80" />
+          <span className="text-slate-400">
+            {ru ? 'Эта папка пока не под Git.' : 'This folder is not under Git yet.'}
+          </span>
+          <code
+            className="rounded bg-slate-950 px-1.5 py-0.5 font-mono text-[10px] text-slate-300 ring-1 ring-inset ring-slate-800"
+            title={ru ? 'Выполните в папке проекта' : 'Run it in the project folder'}
+          >
             git init
           </code>
         </div>
@@ -446,22 +443,18 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
 
       {status?.isRepo && trackingLine(status, ru) && (
         <div className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-[10px] text-slate-300 flex items-start gap-2">
-          <GitBranch className="w-3 h-3 shrink-0 mt-0.5 text-sky-400" />
+          <GitBranch className="w-3 h-3 shrink-0 mt-0.5 text-slate-500" />
           <span>{trackingLine(status, ru)}</span>
         </div>
       )}
 
       {status?.isRepo && status.identityMissing && (
-        <div className="bg-amber-950/40 border border-amber-800/50 rounded-xl p-2.5 text-[11px] text-amber-200 space-y-1">
-          <span className="font-bold">
-            {ru ? 'Git ещё не знает ваше имя и почту' : 'Git does not know your name and email yet'}
-          </span>
-          <p>
-            {ru
-              ? 'Без этого он не создаст версию. Выполните один раз в любом терминале:'
-              : 'Without them it will not save a version. Run this once in any terminal:'}
-          </p>
-          <code className="block bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 font-mono text-[10px] text-emerald-300 whitespace-pre-wrap">
+        <div className="space-y-1 text-[11px]">
+          <div className="flex items-center gap-2 text-slate-400">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400/80" />
+            <span>{ru ? 'Git ещё не знает имя и почту.' : 'Git does not know your name and email yet.'}</span>
+          </div>
+          <code className="block whitespace-pre-wrap rounded bg-slate-950 px-2 py-1.5 font-mono text-[10px] text-slate-300 ring-1 ring-inset ring-slate-800">
             git config --global user.name "Ваше имя"{'\n'}git config --global user.email "ваша@почта"
           </code>
         </div>
@@ -470,8 +463,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
       {status?.isRepo && (
         <>
           {status.clean ? (
-            <div className="bg-emerald-950/40 border border-emerald-800/50 rounded-xl p-3 text-[11px] text-emerald-200 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
+            <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-[11px] text-slate-400">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400/90" />
               <span>
                 {ru
                   ? 'Все изменения уже сохранены — новых нет.'
@@ -615,28 +608,28 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
                   rows={2}
                   aria-label={ru ? 'Описание версии' : 'Version description'}
                   placeholder={ru ? 'Например: Обновить экран напитков' : 'For example: Update the drinks screen'}
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-sky-600 rounded-xl px-3 py-2 text-xs text-slate-100 resize-y"
+                  className="w-full resize-y rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-100 focus:border-indigo-600"
                 />
-                <button
+                <Button
+                  variant="primary"
+                  size="md"
+                  icon={isCommitting ? Loader2 : Save}
+                  className="w-full"
                   onClick={commit}
                   disabled={isCommitting || selected.length === 0 || !message.trim()}
-                  className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(2_6_23/0.55)] text-xs font-medium text-white transition-colors enabled:hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-50"
                 >
-                  {isCommitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  <span>
-                    {ru
-                      ? `Сохранить версию (${selected.length})`
-                      : `Save this version (${selected.length})`}
-                  </span>
-                </button>
+                  {ru
+                    ? `Сохранить версию (${selected.length})`
+                    : `Save this version (${selected.length})`}
+                </Button>
               </div>
             </div>
           )}
 
           {commitResult && (
-            <div className="bg-emerald-950/40 border border-emerald-800/50 rounded-xl p-2.5 space-y-1">
-              <div className="text-[11px] font-bold text-emerald-200 flex items-center gap-1.5">
-                <GitCommit className="w-3.5 h-3.5" />
+            <div className="space-y-1 rounded-lg border border-slate-800 bg-slate-950/60 p-2.5">
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-200">
+                <GitCommit className="w-3.5 h-3.5 shrink-0 text-emerald-400/90" />
                 <span className="font-mono">{commitResult.hash}</span>
                 <span className="truncate">{commitResult.subject}</span>
               </div>
@@ -670,8 +663,15 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
             */}
           <div className="pt-2 border-t border-slate-800 space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
                 {ru ? 'Ветки' : 'Branches'}
+                <HelpHint
+                  text={
+                    ru
+                      ? 'Новая ветка начинается от текущей версии: ничего сохранённого не теряется, а незакоммиченные файлы остаются с вами. Переключения, слияния и удаления веток здесь нет.'
+                      : 'A new branch starts from the current version: nothing saved is lost, and uncommitted files stay with you. There is no switching, merging or deleting here.'
+                  }
+                />
               </span>
               {isBranchLoading && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
             </div>
@@ -727,8 +727,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
                 value={newBranch}
                 onChange={(event) => setNewBranch(event.target.value)}
                 aria-label={ru ? 'Имя новой ветки' : 'New branch name'}
-                spellCheck={false}
-                className="flex-1 min-w-0 bg-slate-950 border border-slate-800 focus:border-sky-600 rounded-lg px-3 py-2 text-[11px] font-mono text-slate-200"
+                spellCheck={false}                  className="flex-1 min-w-0 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-[11px] text-slate-200 focus:border-indigo-600"
               />
               <button
                 onClick={startBranch}
@@ -740,15 +739,10 @@ export const GitPanel: React.FC<GitPanelProps> = ({ ru, root, language, refreshT
               </button>
             </div>
 
-            <p className="text-[10px] text-slate-400">
-              {ru
-                ? 'Новая ветка начинается от текущей версии — ничего сохранённого не теряется, а незакоммиченные файлы остаются с вами. Переключения, слияния и удаления веток здесь нет.'
-                : 'A new branch starts from the current version — nothing saved is lost, and uncommitted files stay with you. There is no switching, merging or deleting here.'}
-            </p>
-
             {branchNotice && (
-              <div className="bg-emerald-950/40 border border-emerald-800/50 rounded-xl p-2.5 text-[10px] text-emerald-200">
-                {branchNotice}
+              <div className="flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2.5 text-[10px] text-slate-400">
+                <GitCommit className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400/90" />
+                <span>{branchNotice}</span>
               </div>
             )}
             {branchError && (

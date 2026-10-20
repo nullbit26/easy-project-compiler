@@ -21,7 +21,8 @@ vi.mock('../services/api', async (importOriginal) => {
 });
 
 import { ProjectCheckStrip } from '../components/ProjectCheckStrip';
-import { fetchChecksApi, runVerificationApi } from '../services/api';
+import { ApiError, fetchChecksApi, runVerificationApi } from '../services/api';
+import { serverUnreachableMessage } from '../utils/serverUnreachable';
 import type { ProjectCheckDefinition, VerificationReport, VerificationResponse } from '../services/api';
 
 const checksMock = fetchChecksApi as unknown as ReturnType<typeof vi.fn>;
@@ -183,5 +184,18 @@ describe('The check strip in the guided flow', () => {
 
     expect(container.querySelector('[data-check-strip]')).toBeNull();
     expect(checksMock).not.toHaveBeenCalled();
+  });
+
+  it('6. says the app server is not answering when the run never reached an API route', async () => {
+    runMock.mockRejectedValue(new ApiError(404, serverUnreachableMessage('ru'), undefined, 'not_json'));
+
+    render(<ProjectCheckStrip root={FOLDER} autoRunKey={'backup-1'} />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Сервер приложения не отвечает — перезапустите его и обновите страницу.')
+      ).toBeTruthy()
+    );
+    expect(screen.queryByText(/Server error/)).toBeNull();
   });
 });

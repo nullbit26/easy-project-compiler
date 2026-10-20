@@ -3,6 +3,7 @@ import { ArrowDownToLine, Trash2, Terminal } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { autopilotFeed, useAutopilotFeed } from '../../services/autopilotFeed';
 import { IconButton } from '../ui/Button';
+import { PaneActionsSlot } from './paneActions';
 
 /**
  * The autopilot terminal, as a window of its own.
@@ -112,6 +113,7 @@ export const TerminalPane: React.FC = () => {
               autopilotFeed.clear();
             }}
           />
+          <PaneActionsSlot />
         </div>
       </div>
 

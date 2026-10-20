@@ -2,8 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Bug, Loader2, MonitorPlay, RotateCcw, Terminal, X } from 'lucide-react';
 import { ProjectState } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
-import { ApiError, buildPreviewApi, PreviewBuild, PreviewDiagnostic } from '../../services/api';
+import { buildPreviewApi, PreviewBuild, PreviewDiagnostic } from '../../services/api';
+import { previewBuildMessage } from '../../utils/apiFailure';
+import { useFolderRevision } from '../../services/folderFeed';
 import { IconButton } from '../ui/Button';
+import { PaneActionsSlot } from './paneActions';
 
 interface PreviewPaneProps {
   project: ProjectState | null;
@@ -25,18 +28,30 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ project, onSendErrorTo
 
   const [build, setBuild] = useState<PreviewBuild | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  /** The failure itself; the display sentence is derived from it, so it follows the language. */
+  const [failure, setFailure] = useState<unknown>(null);
   const [logs, setLogs] = useState<Array<{ type: 'log' | 'error' | 'warn'; text: string; time: string }>>([]);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [showConsole, setShowConsole] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  /** Files connected a different folder while this window stayed open. */
+  const folderRevision = useFolderRevision();
+  /**
+   * Whether a build is running right now, as a ref.
+   *
+   * A build started after the folder settled (`services/folderGate`) has already read the new
+   * folder, so an announcement that arrives while it runs needs no second build. A ref answers that
+   * in the effect itself, without waiting for a state update to be rendered.
+   */
+  const buildingRef = useRef(false);
   /** True while the keyboard is inside the frame: the one element the browser gives no focus ring. */
   const [frameHoldsKeyboard, setFrameHoldsKeyboard] = useState(false);
 
   const runBuild = async () => {
+    buildingRef.current = true;
     setIsBuilding(true);
-    setMessage(null);
+    setFailure(null);
     try {
       const result = await buildPreviewApi({ language });
       setBuild(result);
@@ -45,23 +60,22 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ project, onSendErrorTo
       setRuntimeError(null);
     } catch (error: any) {
       setBuild(null);
-      setMessage(
-        error instanceof ApiError
-          ? error.userMessage
-          : ru
-          ? 'Не удалось собрать проект.'
-          : 'The project could not be built.'
-      );
+      setFailure(error);
     } finally {
+      buildingRef.current = false;
       setIsBuilding(false);
     }
   };
 
   useEffect(() => {
+    // The folder was re-bound under a finished build: show the new folder's page instead of the
+    // previous one. A build already in flight is left alone — it waited on the folder gate, so it
+    // is already building the folder that was just connected.
+    if (buildingRef.current) return;
     void runBuild();
     // One build per connected folder and per language; the reload button is the manual way.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.id, language]);
+  }, [project?.id, language, folderRevision]);
 
   // Console and runtime errors from inside the frame, on the same channel the sandbox screen uses.
   useEffect(() => {
@@ -102,6 +116,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ project, onSendErrorTo
 
   const diagnostics: PreviewDiagnostic[] = build?.diagnostics || [];
   const frameSource = build?.ok ? build.url || build.html : null;
+  const message = failure ? previewBuildMessage(failure, language) : null;
   const hasFolder = Boolean(build?.root) && !message;
 
   const errorTextForCoach = () => {
@@ -155,6 +170,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ project, onSendErrorTo
               onClick={() => onSendErrorToCoach(errorTextForCoach())}
             />
           )}
+          <PaneActionsSlot />
         </div>
       </div>
 

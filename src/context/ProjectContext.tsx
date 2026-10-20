@@ -16,6 +16,7 @@ import { generateCustomRulesFiles } from '../utils/rulesGenerator';
 import { withAutonomy, withInterfaceMode } from '../utils/workingMode';
 import { RulesCheckStamp } from '../utils/rulesCheckStamp';
 import { mergeTaskFiles } from '../utils/taskFiles';
+import { connectProjectFolder } from '../services/projectFolder';
 import { useLanguage } from './LanguageContext';
 
 interface ProjectContextType {
@@ -47,6 +48,14 @@ interface ProjectContextType {
   onAddProject: (newProject: ProjectState) => void;
   onUpdateProjectFiles: (updatedFiles: Array<{ path: string; content: string }>) => void;
   onSyncProjectFiles: (files: ProjectFile[], root: string | null) => void;
+  /**
+   * Records the folder the app connected as this project's own, without touching the file map.
+   *
+   * Binding happens on the Files screen, and the Auto run later repairs the server from
+   * `project.workspaceRoot`: a bind that lived only in the server's memory left the canvas unable
+   * to name the folder after a restart, which looked like "no project folder is connected".
+   */
+  onSetProjectFolder: (root: string) => void;
   /** Keeps the AI reading of the files on the project, so it survives a reload. */
   onApplyFileInsights: (insights: FileInsights) => void;
   /**
@@ -195,9 +204,44 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const clearToast = () => setToastMessage(null);
 
+  /**
+   * Opens a project *and its folder*.
+   *
+   * The folder is one per app, and every screen reads it from the server — Files, Git, checks, the
+   * preview, the studio, the Auto run. Opening another project without moving that folder left each
+   * of those screens showing the previous project's files, with nothing on them saying so. The repair
+   * lives in one module (`services/projectFolder`) and runs here, so the folder follows the project
+   * and a server that came up without its data file is restored from the project the user opened.
+   *
+   * A folder that is gone or read-only is not fatal: the screens keep reading whatever the server
+   * really has, and the Auto run is the screen that words the refusal.
+   */
+  const openProject = (proj: ProjectState | null) => {
+    if (proj?.workspaceRoot) void connectProjectFolder(proj, language);
+  };
+
   const onSelectProject = (proj: ProjectState) => {
     setCurrentProject(proj);
+    openProject(proj);
   };
+
+  /**
+   * The project restored from storage is opened in the *first render*, not in an effect.
+   *
+   * After a restart the server may have no folder at all (a fresh data folder, an update that
+   * replaced it), and the project is what remembers which one it was. React runs a child's effects
+   * before its parent's, so an effect here started the reconnect only after the screens mounted in
+   * the same commit had already asked for the folder and been told there is none — each kept that
+   * answer until it was remounted. Starting it while rendering puts the reconnect in the folder gate
+   * first (`services/folderGate`), so those very requests wait for it instead of racing it.
+   *
+   * The call is idempotent (deduplicated per folder in `services/projectFolder`), which is what makes
+   * it safe to start from render twice in development; later projects go through `onSelectProject`.
+   */
+  useState(() => {
+    openProject(currentProject);
+    return null;
+  });
 
   const onDeleteProject = (projectId: string) => {
     const updated = allProjects.filter((p) => p.id !== projectId);
@@ -327,6 +371,13 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
    * Replaces the project map with the files that really exist in the connected folder, so the
    * Prompt Compiler and the plan work with real paths instead of the seeded examples.
    */
+  const onSetProjectFolder = (root: string) => {
+    if (!currentProject || currentProject.workspaceRoot === root) return;
+    const updated = { ...currentProject, workspaceRoot: root };
+    setCurrentProject(updated);
+    setAllProjects(allProjects.map((p) => (p.id === updated.id ? updated : p)));
+  };
+
   const onSyncProjectFiles = (files: ProjectFile[], root: string | null) => {
     if (!currentProject) return;
 
@@ -663,6 +714,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         onAddProject,
         onUpdateProjectFiles,
         onSyncProjectFiles,
+        onSetProjectFolder,
         onApplyFileInsights,
         onUpdateRulesContent,
         onRecordRulesCheck,

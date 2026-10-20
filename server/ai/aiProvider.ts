@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { getGeminiClient, safeCallGemini, resilientJsonParse } from './geminiProvider';
 import { AI_MAX_OUTPUT_TOKENS, ANTHROPIC_SAFE_OUTPUT_TOKENS, isOutputLimit } from './jsonRepair';
 import { ProviderId, PROVIDERS, resolveApiKey, getActiveProvider } from '../store/apiKeyStore';
+import { takeSseFrames } from '../../src/utils/sse';
 
 /**
  * Provider-agnostic AI layer.
@@ -68,6 +69,31 @@ export interface ProviderTestResult {
   model?: string;
   status?: number;
   message: string;
+}
+
+/**
+ * How a caller watches a request while it is happening.
+ *
+ * The compiler screen shows the answer being written instead of a countdown, so the same request
+ * path that returns parsed JSON also reports the text as it arrives. Nothing here changes what is
+ * asked of the provider when no callback is given: without `onDelta` the request is the plain,
+ * non-streaming one.
+ */
+export interface AiStreamOptions {
+  /** A piece of the answer, exactly as the provider sent it. */
+  onDelta?: (text: string) => void;
+  /**
+   * A new provider/model attempt is starting. The previous attempt's text belongs to a model that
+   * did not finish, so a reader that resets what it shows on this event shows the right one.
+   */
+  onAttempt?: (provider: ProviderId, model: string | null) => void;
+  /** Aborted when the screen that asked for the answer is gone. */
+  signal?: AbortSignal;
+  /**
+   * The output ceiling for this request, when it is not the global one. Used by the affordability
+   * retry: a host that says the account can only afford N tokens is asked again with N.
+   */
+  maxTokens?: number;
 }
 
 interface RawResult {
@@ -150,6 +176,137 @@ async function readJson(res: Response): Promise<any> {
   } catch {
     return null;
   }
+}
+
+/**
+ * The text of an OpenAI-compatible streamed frame.
+ *
+ * The host may ignore `stream` and answer one JSON document instead (a proxy in front of it, a
+ * model that does not stream); `readEventStream` turns such an answer into a single frame, so this
+ * reader sees the same shape either way.
+ */
+export function openAiStreamDelta(data: string): {
+  text?: string;
+  truncated?: boolean;
+  error?: string;
+  done?: boolean;
+} {
+  if (data === '[DONE]') return { done: true };
+  let payload: any;
+  try {
+    payload = JSON.parse(data);
+  } catch {
+    return {};
+  }
+  if (payload?.error) {
+    return { error: String(payload.error.message || payload.error || 'The provider reported an error mid-answer.') };
+  }
+  const choice = payload?.choices?.[0];
+  const text =
+    typeof choice?.delta?.content === 'string'
+      ? choice.delta.content
+      : // The host ignored `stream` and answered one complete message: it is all one delta.
+      typeof choice?.message?.content === 'string'
+      ? choice.message.content
+      : typeof choice?.text === 'string'
+      ? choice.text
+      : undefined;
+  return { text, truncated: isOutputLimit(choice?.finish_reason ?? choice?.finishReason) || undefined };
+}
+
+/** The same reading for Anthropic's named events. */
+export function anthropicStreamDelta(data: string): {
+  text?: string;
+  truncated?: boolean;
+  error?: string;
+  done?: boolean;
+} {
+  let payload: any;
+  try {
+    payload = JSON.parse(data);
+  } catch {
+    return {};
+  }
+  if (payload?.type === 'error') {
+    return { error: String(payload?.error?.message || 'Anthropic reported an error mid-answer.') };
+  }
+  if (payload?.type === 'message_stop') return { done: true };
+  // The same allowance as above: a whole message body is one complete piece of text.
+  if (payload?.type === 'message' && Array.isArray(payload?.content)) {
+    const answer = anthropicAnswer(payload);
+    return { text: answer.text, truncated: answer.truncated || undefined };
+  }
+  if (payload?.type === 'content_block_delta' && typeof payload?.delta?.text === 'string') {
+    return { text: payload.delta.text };
+  }
+  if (payload?.type === 'message_delta') {
+    return { truncated: isOutputLimit(payload?.delta?.stop_reason ?? payload?.stop_reason) || undefined };
+  }
+  return {};
+}
+
+/**
+ * Reads a provider's `text/event-stream` body, frame by frame.
+ *
+ * The tail of the stream is flushed as one last frame: a host is not obliged to end its last frame
+ * with an empty line, and losing that frame would lose the final piece of the answer.
+ */
+async function readEventStream(res: Response, onData: (data: string) => void): Promise<void> {
+  const body: any = (res as any).body;
+  const type = res.headers?.get?.('content-type') || '';
+
+  // The host answered the request but not as a stream. Its one JSON document is the whole answer.
+  if (!type.includes('text/event-stream') || !body?.getReader) {
+    const payload = await readJson(res);
+    if (payload) onData(JSON.stringify(payload));
+    return;
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parsed = takeSseFrames(buffer);
+      buffer = parsed.rest;
+      for (const frame of parsed.frames) onData(frame.data);
+    }
+    buffer += decoder.decode();
+    const tail = takeSseFrames(`${buffer}\n\n`);
+    for (const frame of tail.frames) onData(frame.data);
+  } finally {
+    try {
+      reader.releaseLock?.();
+    } catch {
+      /* A released or failed reader is already done with. */
+    }
+  }
+}
+
+/**
+ * A timer and the screen's own abort, on one signal.
+ *
+ * The timeout is what keeps a silent provider from holding the request for minutes; the external
+ * signal is what stops paying for an answer nobody is waiting for any more.
+ */
+function openGate(timeoutMs: number, external?: AbortSignal): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const relay = () => controller.abort();
+  if (external) {
+    if (external.aborted) controller.abort();
+    else external.addEventListener('abort', relay, { once: true });
+  }
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timer);
+      external?.removeEventListener('abort', relay);
+    }
+  };
 }
 
 function mapHttpFailure(status: number): FailureReason {
@@ -242,10 +399,10 @@ async function requestOpenAiCompatibleText(
   baseUrl: string,
   mode: JsonMode = 'object',
   schema?: any,
-  timeoutMs = AI_REQUEST_TIMEOUT_MS
+  timeoutMs = AI_REQUEST_TIMEOUT_MS,
+  options: AiStreamOptions = {}
 ): Promise<RawResult> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const gate = openGate(timeoutMs, options.signal);
   try {
     const body: Record<string, unknown> = {
       model,
@@ -254,8 +411,10 @@ async function requestOpenAiCompatibleText(
         { role: 'user', content: prompt }
       ]
     };
+    // Asked for only when someone is watching: a stream nobody reads is a slower plain request.
+    if (options.onDelta) body.stream = true;
     // The ceiling, asked for rather than assumed: left out, it is whatever the host defaults to.
-    if (!hostsWithoutTokenBudget.has(baseUrl)) body.max_tokens = AI_MAX_OUTPUT_TOKENS;
+    if (!hostsWithoutTokenBudget.has(baseUrl)) body.max_tokens = options.maxTokens ?? AI_MAX_OUTPUT_TOKENS;
     // Some hosts reject a response_format for individual models; the caller walks down to a looser
     // mode instead of losing the answer.
     if (mode === 'schema' && schema) {
@@ -269,7 +428,7 @@ async function requestOpenAiCompatibleText(
 
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
-      signal: controller.signal,
+      signal: gate.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`
@@ -285,7 +444,25 @@ async function requestOpenAiCompatibleText(
       if (res.status === 400 && /max_?tokens|max_?completion_?tokens/i.test(String(message)) && !hostsWithoutTokenBudget.has(baseUrl)) {
         hostsWithoutTokenBudget.add(baseUrl);
         console.info(`[AI Router] ${baseUrl} does not take max_tokens; asking again without it.`);
-        return requestOpenAiCompatibleText(apiKey, model, prompt, baseUrl, mode, schema, timeoutMs);
+        return requestOpenAiCompatibleText(apiKey, model, prompt, baseUrl, mode, schema, timeoutMs, options);
+      }
+      /*
+       * A host billing per token can refuse a ceiling the account cannot afford yet: «you requested
+       * up to 16000 tokens, but can only afford 5318». The request never reached the model — it is
+       * a billing fact, not an answer — so asking again with the number the host named costs one
+       * call and keeps the provider. Without this the caller sees an empty model answer and says
+       * «Модель не вернула изменений» about a wallet.
+       */
+      const affordable = /afford\s+([\d,]+)/i.exec(String(message));
+      if (options.maxTokens === undefined && (res.status === 402 || res.status === 403) && affordable) {
+        const tokens = Number(affordable[1].replace(/,/g, '')) - 256;
+        if (tokens >= 512) {
+          console.info(`[AI Router] ${baseUrl} can afford ${tokens} output tokens; asking again with that ceiling.`);
+          return requestOpenAiCompatibleText(apiKey, model, prompt, baseUrl, mode, schema, timeoutMs, {
+            ...options,
+            maxTokens: tokens
+          });
+        }
       }
       return {
         ok: false,
@@ -293,6 +470,35 @@ async function requestOpenAiCompatibleText(
         status: res.status,
         message: redact(message)
       };
+    }
+
+    if (options.onDelta) {
+      /*
+       * The answer arrives as frames of text. The whole text is still collected, because it is the
+       * JSON the caller parses; the deltas are a second reading of the same bytes, not a different
+       * request.
+       */
+      let text = '';
+      let truncated = false;
+      let midStreamError: string | null = null;
+
+      await readEventStream(res, (data) => {
+        const delta = openAiStreamDelta(data);
+        if (delta.error) midStreamError = delta.error;
+        if (delta.truncated) truncated = true;
+        if (delta.text) {
+          text += delta.text;
+          options.onDelta?.(delta.text);
+        }
+      });
+
+      if (midStreamError) {
+        return { ok: false, reason: 'http', message: redact(midStreamError) };
+      }
+      if (!text.trim()) {
+        return { ok: false, reason: 'invalid_response', message: 'The model returned an empty message.' };
+      }
+      return { ok: true, text, truncated };
     }
 
     const payload = await readJson(res);
@@ -305,7 +511,7 @@ async function requestOpenAiCompatibleText(
     if (isAbortError(err)) return timeoutResult(timeoutMs);
     return { ok: false, reason: 'network', message: redact(err?.message || 'Network error while contacting the provider.') };
   } finally {
-    clearTimeout(timer);
+    gate.cleanup();
   }
 }
 
@@ -322,7 +528,8 @@ async function requestCompatibleProviderText(
   model: string,
   prompt: string,
   schema?: any,
-  timeoutMs = AI_REQUEST_TIMEOUT_MS
+  timeoutMs = AI_REQUEST_TIMEOUT_MS,
+  options: AiStreamOptions = {}
 ): Promise<RawResult> {
   const { baseUrl } = PROVIDER_CHAIN[provider];
   const modes: JsonMode[] = schema ? ['schema', 'object', 'none'] : ['object', 'none'];
@@ -330,6 +537,8 @@ async function requestCompatibleProviderText(
   let last: RawResult = { ok: false, reason: 'network', message: 'No request was made.' };
 
   for (let index = 0; index < modes.length; index++) {
+    // The reader stopped the run: another attempt would be paid for and thrown away.
+    if (options.signal?.aborted) break;
     // A retry must not double the wait on a model that never answered.
     const remaining = deadline - Date.now();
     if (index > 0 && remaining <= 5000) break;
@@ -341,7 +550,8 @@ async function requestCompatibleProviderText(
       baseUrl,
       modes[index],
       schema,
-      Math.max(5000, remaining)
+      Math.max(5000, remaining),
+      options
     );
     if (last.ok) return last;
 
@@ -357,14 +567,14 @@ async function requestAnthropicText(
   model: string,
   prompt: string,
   timeoutMs = AI_REQUEST_TIMEOUT_MS,
-  maxTokens = AI_MAX_OUTPUT_TOKENS
+  maxTokens = AI_MAX_OUTPUT_TOKENS,
+  options: AiStreamOptions = {}
 ): Promise<RawResult> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const gate = openGate(timeoutMs, options.signal);
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      signal: controller.signal,
+      signal: gate.signal,
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
@@ -377,7 +587,8 @@ async function requestAnthropicText(
         // one is the fallback, so a model that refuses it still answers.
         max_tokens: maxTokens,
         system: JSON_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role: 'user', content: prompt }],
+        ...(options.onDelta ? { stream: true } : {})
       })
     });
 
@@ -385,7 +596,7 @@ async function requestAnthropicText(
       const errorBody = await readJson(res);
       const message = errorBody?.error?.message || res.statusText;
       if (res.status === 400 && /max_?tokens/i.test(String(message)) && maxTokens > ANTHROPIC_SAFE_OUTPUT_TOKENS) {
-        return requestAnthropicText(apiKey, model, prompt, timeoutMs, ANTHROPIC_SAFE_OUTPUT_TOKENS);
+        return requestAnthropicText(apiKey, model, prompt, timeoutMs, ANTHROPIC_SAFE_OUTPUT_TOKENS, options);
       }
       return {
         ok: false,
@@ -393,6 +604,30 @@ async function requestAnthropicText(
         status: res.status,
         message: redact(message)
       };
+    }
+
+    if (options.onDelta) {
+      let text = '';
+      let truncated = false;
+      let midStreamError: string | null = null;
+
+      await readEventStream(res, (data) => {
+        const delta = anthropicStreamDelta(data);
+        if (delta.error) midStreamError = delta.error;
+        if (delta.truncated) truncated = true;
+        if (delta.text) {
+          text += delta.text;
+          options.onDelta?.(delta.text);
+        }
+      });
+
+      if (midStreamError) {
+        return { ok: false, reason: 'http', message: redact(midStreamError) };
+      }
+      if (!text.trim()) {
+        return { ok: false, reason: 'invalid_response', message: 'Anthropic returned an empty message.' };
+      }
+      return { ok: true, text, truncated };
     }
 
     const body = await readJson(res);
@@ -405,19 +640,31 @@ async function requestAnthropicText(
     if (isAbortError(err)) return timeoutResult(timeoutMs);
     return { ok: false, reason: 'network', message: redact(err?.message || 'Network error while contacting Anthropic.') };
   } finally {
-    clearTimeout(timer);
+    gate.cleanup();
   }
 }
 
-async function callGeminiJson(prompt: string, responseSchema?: any): Promise<any | null> {
+async function callGeminiJson(
+  prompt: string,
+  responseSchema?: any,
+  options: AiStreamOptions = {}
+): Promise<any | null> {
   const client = getGeminiClient();
   if (!client) return null;
   let usedModel: string | null = null;
   // The cut-off case is logged and repaired inside safeCallGemini, which is where the finish reason
   // is read; all this callback needs is the name of the model that answered.
-  const data = await safeCallGemini(client, prompt, responseSchema, (model) => {
-    usedModel = model;
-  });
+  const data = await safeCallGemini(
+    client,
+    prompt,
+    responseSchema,
+    (model) => {
+      usedModel = model;
+    },
+    options.onDelta,
+    (model) => options.onAttempt?.('gemini', model),
+    options.signal
+  );
   if (data) {
     markServed('gemini', usedModel);
     return data;
@@ -428,7 +675,8 @@ async function callGeminiJson(prompt: string, responseSchema?: any): Promise<any
 async function callRestProviderJson(
   provider: Exclude<ProviderId, 'gemini'>,
   prompt: string,
-  responseSchema?: any
+  responseSchema?: any,
+  options: AiStreamOptions = {}
 ): Promise<any | null> {
   const apiKey = resolveApiKey(provider);
   if (!apiKey) return null;
@@ -436,17 +684,22 @@ async function callRestProviderJson(
   const deadline = Date.now() + AI_TOTAL_BUDGET_MS;
   const models = provider === 'anthropic' ? ANTHROPIC_MODELS : PROVIDER_CHAIN[provider].models;
   for (let index = 0; index < models.length; index++) {
+    if (options.signal?.aborted) return null;
     const model = models[index];
     const budgetLeft = deadline - Date.now();
     // Too little left to be worth starting another model: let the caller use its local engine.
     if (index > 0 && budgetLeft <= 10000) break;
     const timeoutMs = Math.max(10000, Math.min(AI_REQUEST_TIMEOUT_MS, budgetLeft));
+    // A new model is a new answer: the screen is told before the first token of it arrives.
+    options.onAttempt?.(provider, model);
     const raw =
       provider === 'anthropic'
-        ? await requestAnthropicText(apiKey, model, prompt, timeoutMs)
-        : await requestCompatibleProviderText(provider, apiKey, model, prompt, responseSchema, timeoutMs);
+        ? await requestAnthropicText(apiKey, model, prompt, timeoutMs, AI_MAX_OUTPUT_TOKENS, options)
+        : await requestCompatibleProviderText(provider, apiKey, model, prompt, responseSchema, timeoutMs, options);
 
     if (!raw.ok) {
+      // Stopped by the reader: no next candidate, no local fallback to write either.
+      if (options.signal?.aborted) return null;
       // An unknown id, a retired model or a silent model are all reasons to try the next candidate.
       if (raw.reason === 'model' || raw.reason === 'timeout') continue;
       // The message is already redacted by the request helpers (a provider sometimes echoes a
@@ -476,13 +729,18 @@ async function callRestProviderJson(
  * Sends the prompt to the first provider with a working key and returns its parsed JSON,
  * or null when no provider could answer (the caller then uses its local fallback).
  */
-export async function callAiJson(prompt: string, responseSchema?: any): Promise<any | null> {
+export async function callAiJson(
+  prompt: string,
+  responseSchema?: any,
+  options: AiStreamOptions = {}
+): Promise<any | null> {
   for (const provider of getOrderedProviders()) {
+    if (options.signal?.aborted) return null;
     try {
       const data =
         provider === 'gemini'
-          ? await callGeminiJson(prompt, responseSchema)
-          : await callRestProviderJson(provider, prompt, responseSchema);
+          ? await callGeminiJson(prompt, responseSchema, options)
+          : await callRestProviderJson(provider, prompt, responseSchema, options);
       if (data) return data;
     } catch (err: any) {
       console.info(`[AI Router] ${provider} threw: ${redact(err?.message || err)}`);

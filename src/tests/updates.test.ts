@@ -15,6 +15,7 @@ import {
 import {
   createUpdater,
   EXE_NAME,
+  launchEnvironment,
   readStagedUpdate,
   scheduleUpdateInstall,
   stagedUpdateVersion,
@@ -443,6 +444,51 @@ describe('4. putting the downloaded build in place', () => {
       spawnImpl: () => ({ unref: () => {} })
     });
     expect(nothingNewer.scheduled).toBe(false);
+  });
+
+  it('4i. the restarted build does not inherit the old one’s runtime paths', () => {
+    /*
+     * The shell writes `EPC_DIST_DIR` into its own process before loading the server, and the swap
+     * helper is spawned from that process. A portable build extracts every start into a new
+     * temporary folder, so the inherited path names a folder the predecessor has already deleted:
+     * the restarted app served 500 and opened a black window. The helper must start from a clean
+     * environment instead.
+     */
+    const updateDir = prepare({});
+    let spawnedEnv: NodeJS.ProcessEnv | undefined;
+    const result = scheduleUpdateInstall({
+      updateDir,
+      exeName: EXE_NAME,
+      version: '1.0.0',
+      relaunch: true,
+      log: () => {},
+      spawnImpl: (_command, _args, options) => {
+        spawnedEnv = options.env as NodeJS.ProcessEnv;
+        return { unref: () => {} };
+      }
+    });
+
+    expect(result.scheduled).toBe(true);
+    expect(spawnedEnv).toBeDefined();
+    expect(spawnedEnv).not.toBe(process.env);
+    expect(Object.keys(spawnedEnv!).filter((key) => key.startsWith('EPC_'))).toEqual([]);
+    expect(spawnedEnv!.EPC_DIST_DIR).toBeUndefined();
+    expect(spawnedEnv!.EPC_STATE_DIR).toBeUndefined();
+  });
+
+  it('4j. launchEnvironment removes only the shell’s own variables', () => {
+    expect(
+      launchEnvironment({
+        PATH: '/bin',
+        EPC_DIST_DIR: 'a folder that is gone',
+        EPC_APP_DIR: 'old',
+        EPC_UPDATES_IN_DEV: '1',
+        NODE_ENV: 'production',
+        PORT: '4123',
+        ELECTRON_RUN_AS_NODE: '1',
+        KEEP: 'yes'
+      })
+    ).toEqual({ PATH: '/bin', KEEP: 'yes' });
   });
 
   it('4e. a build that never reached the update folder is not advertised', () => {

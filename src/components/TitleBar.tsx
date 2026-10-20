@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Copy, Minus, Plus, Square, X } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { IconButton } from './ui/Button';
+import { serverUnreachableMessage } from '../utils/serverUnreachable';
 import logo from '../assets/epc-logo.webp';
 
 /** The bridge electron/preload.ts puts on the page; absent when the page runs in a browser. */
@@ -42,16 +43,31 @@ const NO_DRAG = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
  * on the content's scrollbar and had to be nudged for every screen that drew a full-bleed box. Here
  * it costs no height (the bar is already there), it is outside every scrolling area, and the window
  * controls keep a hairline of their own so the app's button is not read as another window control.
+ *
+ * The left end of the bar is an empty slot for the active screen's own tools: the studio's window
+ * controls (add a window, the arrangements, reset) are mounted there instead of in a second strip
+ * below the bar. Two rows of buttons above the content — the studio's own toolbar and then a pane's
+ * header — is one row of chrome too many, and it made the top of the window the heaviest part of it.
+ * The studio owns those controls and their state; this bar only hands over the place to put them.
  */
+
+/** The id the studio looks for when it mounts its tools into this bar. */
+export const TITLE_TOOLS_ID = 'epc-title-tools';
 
 interface TitleBarProps {
   /** Opens one more screen column beside the current one. Absent when the screen cannot host one. */
   onOpenScreenBeside?: () => void;
   /** At the pane ceiling: the plus stays in place, visibly spent, instead of disappearing. */
   openScreenBesideDisabled?: boolean;
+  /** The page was opened without the app's server: nothing that reads the folder or builds can work. */
+  serverMissing?: boolean;
 }
 
-export const TitleBar: React.FC<TitleBarProps> = ({ onOpenScreenBeside, openScreenBesideDisabled = false }) => {
+export const TitleBar: React.FC<TitleBarProps> = ({
+  onOpenScreenBeside,
+  openScreenBesideDisabled = false,
+  serverMissing = false
+}) => {
   const { language } = useLanguage();
   const ru = language === 'ru';
   const bridge = typeof window === 'undefined' ? undefined : window.desktopWindow;
@@ -96,7 +112,35 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenScreenBeside, openScre
         <span className="text-[11px] font-semibold text-slate-300 truncate">Easy Project Compiler</span>
       </div>
 
-      <div className="flex items-stretch" style={NO_DRAG}>
+      {/*
+        The server is the half that reads folders, runs checks and builds previews. Without it the
+        screens can only fail one by one, each with the same sentence; the bar says it once, in the
+        window itself, before the first failed request. A dot and three words: the full sentence is
+        the tooltip, because a lost server is not a paragraph to read on every screen.
+      */}
+      {serverMissing && (
+        <span
+          data-testid="server-status"
+          title={serverUnreachableMessage(language)}
+          style={NO_DRAG}
+          className="mr-2 flex min-w-0 items-center gap-1.5 pl-3 text-[11px] text-rose-300"
+        >
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400" aria-hidden="true" />
+          <span className="truncate">
+            {ru ? 'Сервер приложения не отвечает' : 'The app server is not answering'}
+          </span>
+        </span>
+      )}
+
+      {/* The active screen's own tools land here (see TITLE_TOOLS_ID); empty on every other screen. */}
+      <div
+        id={TITLE_TOOLS_ID}
+        data-testid="title-bar-tools"
+        style={NO_DRAG}
+        className="flex min-w-0 items-center gap-1 pl-3 empty:hidden"
+      />
+
+      <div className="ml-auto flex items-stretch" style={NO_DRAG}>
         {onOpenScreenBeside && (
           /*
             A clear gap, no hairline: the plus is the app's action, and next to a 44 px minimise it
